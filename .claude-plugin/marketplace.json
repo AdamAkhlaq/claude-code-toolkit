@@ -1,0 +1,11 @@
+{
+  "name": "claude-code-toolkit",
+  "owner": { "name": "Adam Akhlaq" },
+  "plugins": [
+    {
+      "name": "docs",
+      "source": "./plugins/docs",
+      "description": "Skills, commands, and a reviewer agent for writing high-quality engineering docs (ADR, RFC, RCA, KDD)."
+    }
+  ]
+}

@@ -13,6 +13,14 @@ Claude Code can be extended with reusable building blocks:
 
 Normally these live scattered across your `~/.claude/` directory and have to be rebuilt by hand every time you set up a new machine. This repo packages them as a **Claude Code plugin**, distributed through a **marketplace** (which is just this Git repo). That means the whole set can be added in one step, kept up to date with a single command, and shared with anyone who wants to use it.
 
+## Available plugins
+
+| Plugin | What it does |
+|--------|--------------|
+| [`docs`](plugins/docs) | Write and review engineering docs — ADRs, RFCs/design docs, RCAs/postmortems, Key Decision Documents, runbooks, READMEs, changelogs, and PRDs — using formats from Google, Amazon, and established standards. |
+
+More plugins (e.g. language-specific toolkits) will be added over time, each independently installable.
+
 ## Requirements
 
 - [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) installed.
@@ -39,7 +47,7 @@ Or install something directly by name:
 /plugin install <name>@claude-code-toolkit
 ```
 
-Once installed, the skills and agents become available automatically — Claude applies them when a task matches their description, and you can also invoke any skill or command explicitly as `/claude-code-toolkit:<name>` (plugin components are namespaced with the marketplace name to avoid clashes).
+Once installed, the skills and agents become available automatically — Claude applies them when a task matches their description, and you can also invoke any skill or command explicitly as `/<plugin>:<name>` (plugin components are namespaced with the plugin name to avoid clashes — e.g. `/docs:new-adr`).
 
 To update later, after new changes are pushed here:
 
@@ -70,7 +78,7 @@ git clone https://github.com/adamakhlaq/claude-code-toolkit.git
 
 From there, install as above. Because it's a local checkout, your edits are picked up directly.
 
-**Cherry-pick individual pieces.** If you just want a single skill or agent and not the whole plugin, copy it straight into your own Claude Code directory — a skill folder into `~/.claude/skills/`, or an agent file into `~/.claude/agents/` — and it'll load like any of your own. No plugin or marketplace involved.
+**Cherry-pick individual pieces.** If you just want a single skill or agent and not the whole plugin, copy it straight into your own Claude Code directory — a skill folder like `plugins/docs/skills/adr/` into `~/.claude/skills/`, or an agent file like `plugins/docs/agents/doc-reviewer.md` into `~/.claude/agents/` — and it'll load like any of your own. No plugin or marketplace involved.
 
 ## A note on scope
 

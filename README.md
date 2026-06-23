@@ -18,6 +18,7 @@ Normally these live scattered across your `~/.claude/` directory and have to be 
 | Plugin | What it does |
 |--------|--------------|
 | [`docs`](plugins/docs) | Write and review engineering docs — ADRs, RFCs/design docs, RCAs/postmortems, Key Decision Documents, runbooks, READMEs, changelogs, and PRDs — using formats from Google, Amazon, and established standards. |
+| [`frontend`](plugins/frontend) | Framework-agnostic frontend best practices — accessibility, performance, CSS, semantics, components, security, testing, forms, design systems, i18n, SEO — grounded in W3C, web.dev, MDN, and OWASP, with audit/review agents. |
 
 More plugins (e.g. language-specific toolkits) will be added over time, each independently installable.
 

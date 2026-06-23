@@ -5,7 +5,12 @@
     {
       "name": "docs",
       "source": "./plugins/docs",
-      "description": "Skills, commands, and a reviewer agent for writing high-quality engineering docs (ADR, RFC, RCA, KDD)."
+      "description": "Skills, commands, and a reviewer agent for writing high-quality engineering docs (ADR, RFC, RCA, KDD, runbook, README, changelog, PRD)."
+    },
+    {
+      "name": "frontend",
+      "source": "./plugins/frontend",
+      "description": "Framework-agnostic frontend best-practice skills (accessibility, performance, CSS, semantics, components, security, testing, forms, design systems, i18n, SEO) plus audit and review agents, grounded in W3C, web.dev, MDN, and OWASP."
     }
   ]
 }

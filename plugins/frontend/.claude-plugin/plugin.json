@@ -1,6 +1,0 @@
-{
-  "name": "frontend",
-  "description": "Framework-agnostic frontend best practices grounded in credible sources — accessibility (WCAG 2.2, ARIA APG), performance (Core Web Vitals), modern CSS, semantic HTML, component design, security (OWASP), testing, forms UX, design systems, i18n, and SEO — with audit and review agents.",
-  "version": "0.1.0",
-  "author": { "name": "Adam Akhlaq" }
-}

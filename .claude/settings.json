@@ -1,0 +1,50 @@
+{
+  "_help": "ARCHETYPE: TEMPLATE. This file grants tool permissions and wires up the hook scripts in .claude/hooks/. PERSONALISE: (1) widen the 'allow' list with read-only commands you run constantly so you stop being prompted for them; (2) tighten 'deny' for anything that must never run unattended; (3) keep only the hooks whose scripts you actually copied — a hook registered here but missing on disk will error, and a hook script on disk does nothing until it's registered here. JSON has no comments, so this guidance lives in _help — DELETE this _help key once you've personalised the file.",
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(cat:*)",
+      "Read"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

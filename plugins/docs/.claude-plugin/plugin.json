@@ -1,6 +1,0 @@
-{
-  "name": "docs",
-  "description": "Author and review high-quality engineering documents — ADRs, RFCs/design docs, RCAs/postmortems, Key Decision Documents, runbooks, READMEs, changelogs, and PRDs — using formats from Google, Amazon, and established standards.",
-  "version": "0.3.0",
-  "author": { "name": "Adam Akhlaq" }
-}

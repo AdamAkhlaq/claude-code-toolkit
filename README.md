@@ -1,86 +1,83 @@
 # claude-code-toolkit
 
-A personal collection of [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) extensions — skills, agents, commands, and hooks — packaged so they can be installed on any machine with one command, or borrowed piece by piece.
+A browsable catalog of [Claude Code](https://docs.claude.com/en/docs/claude-code/overview)
+building blocks — project context, permissions, hooks, agents, and skills — that
+you copy into your own project and make your own.
 
-## What this is
+No plugin to install, no marketplace to add. The repo is shaped like a real
+`.claude/` folder, so **the path of a file here is the path it goes in your
+project.** Copy what you want, drop it in the same place, personalise, done.
 
-Claude Code can be extended with reusable building blocks:
+## Quick start
 
-- **Skills** — reusable workflows and knowledge that Claude applies automatically when relevant, or that you trigger by name.
-- **Agents** — specialised sub-assistants that run in their own context and handle a focused job.
-- **Commands** — explicit slash-command shortcuts.
-- **Hooks** — scripts that run automatically on Claude Code events.
+Grab a piece straight into your project:
 
-Normally these live scattered across your `~/.claude/` directory and have to be rebuilt by hand every time you set up a new machine. This repo packages them as a **Claude Code plugin**, distributed through a **marketplace** (which is just this Git repo). That means the whole set can be added in one step, kept up to date with a single command, and shared with anyone who wants to use it.
-
-## Available plugins
-
-| Plugin | What it does |
-|--------|--------------|
-| [`docs`](plugins/docs) | Write and review engineering docs — ADRs, RFCs/design docs, RCAs/postmortems, Key Decision Documents, runbooks, READMEs, changelogs, and PRDs — using formats from Google, Amazon, and established standards. |
-| [`frontend`](plugins/frontend) | Framework-agnostic frontend best practices — accessibility, performance, CSS, semantics, components, security, testing, forms, design systems, i18n, SEO — grounded in W3C, web.dev, MDN, and OWASP, with audit/review agents. |
-
-More plugins (e.g. language-specific toolkits) will be added over time, each independently installable.
-
-## Requirements
-
-- [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) installed.
-
-## Using it as a plugin (recommended)
-
-This is the cleanest way: components install into a managed cache, stay versioned, and can be updated or removed cleanly.
-
-Inside a Claude Code session, add this repo as a marketplace:
-
-```
-/plugin marketplace add adamakhlaq/claude-code-toolkit
+```bash
+# from your project root — grab the CLAUDE.md template
+curl -o CLAUDE.md \
+  https://raw.githubusercontent.com/AdamAkhlaq/claude-code-toolkit/main/CLAUDE.md
 ```
 
-Then browse and install what's on offer:
+Or browse the tree on GitHub and copy the files you want into the same relative
+path. Then, for any template, tell Claude Code:
+
+> Personalise the files I just copied to this repo: inspect the codebase, then
+> replace the {{TOKENS}} and act on the guidance comments using real values —
+> confirming any commands actually exist. Once each file is filled in, delete the
+> guidance comments and show me a diff without committing.
+
+It reads the in-file instructions, fills them in from your codebase, and strips
+the guidance out.
+
+## How the pieces work
+
+Every file is one of three types. The type tells you how much work it needs
+before it's yours:
+
+| Type               | Meaning                                                                                                                                         |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Template**       | Structure + fill-in guidance. Carries `{{TOKENS}}` and `<!-- guidance -->` comments. Copy, then let Claude personalise and remove the guidance. |
+| **Copy-and-tweak** | Working content with one marked block to edit — a formatter, a list of protected paths.                                                         |
+| **Ready-to-use**   | Works verbatim. Copy and go.                                                                                                                    |
+
+## What's inside
+
+| Path                    | Type         | What it's about                                                                                                                               |
+| ----------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLAUDE.md`             | Template     | Standing context loaded every session — stack, commands, conventions, and a "Never" list. Lives at your repo **root**, not inside `.claude/`. |
+| `.claude/settings.json` | Template     | Permission allow/deny lists plus registration for the hooks.                                                                                  |
+| `.claude/hooks/`        | Mixed        | Deterministic scripts that fire on tool events — guard edits to protected paths, format on save, act at end of turn.                          |
+| `.claude/agents/`       | Ready-to-use | Focused reviewers that run in their own context and return strict pass/fail verdicts on your changes.                                         |
+| `.claude/skills/`       | Ready-to-use | Reusable doc-writing workflows Claude applies when relevant, plus a template for authoring your own.                                          |
+
+## Personalising a template
+
+1. Copy the file to the same path in your repo.
+2. Ask Claude Code to personalise it (see quick start). It fills `{{TOKENS}}` from
+   your project and deletes the `<!-- guidance -->` comments.
+3. Review and commit. For `CLAUDE.md`, keep it lean — say only what Claude can't
+   infer from the code.
+
+## Taking a hook? Take its registration too
+
+A hook script does nothing on its own — Claude Code only runs it if it's
+registered in `settings.json`. If you copy a hook, also copy its entry from the
+`hooks` block in `.claude/settings.json`, or the hook will sit there inert.
+
+## Repo layout
 
 ```
-/plugin
+claude-code-toolkit/
+├── CLAUDE.md            # project context template — copy to your repo root
+└── .claude/
+    ├── settings.json    # permissions + hook registration
+    ├── hooks/           # scripts that run on tool events
+    ├── agents/          # focused reviewers, run in their own context
+    └── skills/          # reusable doc-writing workflows (+ a template)
 ```
 
-Or install something directly by name:
+## Scope
 
-```
-/plugin install <name>@claude-code-toolkit
-```
-
-Once installed, the skills and agents become available automatically — Claude applies them when a task matches their description, and you can also invoke any skill or command explicitly as `/<plugin>:<name>` (plugin components are namespaced with the plugin name to avoid clashes — e.g. `/docs:new-adr`).
-
-To update later, after new changes are pushed here:
-
-```
-/plugin marketplace update claude-code-toolkit
-```
-
-The same operations work from your terminal without opening a session, e.g.:
-
-```
-claude plugin marketplace add adamakhlaq/claude-code-toolkit
-claude plugin install <name>@claude-code-toolkit
-```
-
-## Using it locally
-
-There are two reasons you might prefer the local route: you want to try or modify things before installing, or you only want one piece rather than the whole set.
-
-**Install from a local clone.** Clone the repo and add it as a marketplace by path — useful for offline use or when you want to tweak something first:
-
-```
-git clone https://github.com/adamakhlaq/claude-code-toolkit.git
-```
-
-```
-/plugin marketplace add ./claude-code-toolkit
-```
-
-From there, install as above. Because it's a local checkout, your edits are picked up directly.
-
-**Cherry-pick individual pieces.** If you just want a single skill or agent and not the whole plugin, copy it straight into your own Claude Code directory — a skill folder like `plugins/docs/skills/adr/` into `~/.claude/skills/`, or an agent file like `plugins/docs/agents/doc-reviewer.md` into `~/.claude/agents/` — and it'll load like any of your own. No plugin or marketplace involved.
-
-## A note on scope
-
-This is a personal toolkit that I maintain for my own use, shared in case any of it is useful to you. You're welcome to install it, fork it, or lift individual pieces. It evolves as my own workflow does, so expect it to change.
+A personal toolkit I maintain for my own use, shared in case it's useful. Lift a
+single file or the whole `.claude/` — it's yours once you copy it. It changes as
+my workflow does.

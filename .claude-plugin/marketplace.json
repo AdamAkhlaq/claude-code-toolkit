@@ -1,0 +1,17 @@
+{
+  "name": "adamakhlaq",
+  "owner": {
+    "name": "Adam Akhlaq",
+    "url": "https://github.com/AdamAkhlaq"
+  },
+  "description": "Adam Akhlaq's Claude Code plugins.",
+  "plugins": [
+    {
+      "name": "toolkit",
+      "source": "./",
+      "description": "An opinionated engineering workflow for Claude Code: human-gated artifacts, a ticket graph for the build, and hooks that enforce the rules that must always hold.",
+      "category": "engineering",
+      "keywords": ["workflow", "sdlc", "tickets", "tdd", "hooks"]
+    }
+  ]
+}

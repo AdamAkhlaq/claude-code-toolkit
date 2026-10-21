@@ -1,0 +1,11 @@
+{
+  "protectedPaths": [],
+  "formatters": {},
+  "linters": {},
+  "testGlobs": [],
+  "feedbackCommand": "",
+  "gatedCommands": [],
+  "secretAllowlist": [],
+  "concurrency": 3,
+  "tracker": "local"
+}

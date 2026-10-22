@@ -28,3 +28,69 @@ Seam: a headless Claude Code session, the plan's one slow seam.
 - `python3 -m unittest discover -s tests` passes.
 
 ## Evidence
+
+### Evidence 2026-10-22 19:45
+
+Setup: the plugin cloned from `ticket/0002-T6` at `8bf024b` into the scratchpad, loaded with `~/.nvm/versions/node/v25.3.0/bin/claude --plugin-dir ../plugin -p` (Claude Code 2.1.304) from a throwaway repo beside it. The repo's `.claude/toolkit.json` is `{ "feedbackCommand": "python3 check.py", "testGlobs": ["tests/"] }`; `check.py` prints `check.py in <cwd>: <STATE>` and exits 1 when the ignored file `state` says `red`. Every prompt states the user approves the commit in this throwaway repo and asks for exactly one command, reported verbatim, with no alternatives. Below, `$E` stands for the scratchpad directory `/private/tmp/claude-501/-Users-adamakhlaq-code-claude-code-toolkit/96c2cbd6-347d-462f-9e1a-e69bd22e6dcc/scratchpad/e2e`. Outcomes are confirmed with `git log`, not only the session's words.
+
+Run 1, red, `app.py` staged, default permission mode, `--allowedTools "Bash(git commit *)"`, `git commit -m run1`:
+
+```
+PreToolUse:Bash hook error: [python3 "$E/plugin/hooks/scripts/red_guard.py"]: Commit stopped: the feedback command is red.
+Command: python3 check.py
+Exit code: 1
+Last 1 line of output:
+check.py in $E/repo: RED
+Fix the code and commit again. Never edit a test to reach green.
+
+This hook comes from the toolkit@inline plugin.
+```
+
+`git log --oneline`: `bdf7cef init` only. `app.py` still staged.
+
+Run 2, the same under `--permission-mode bypassPermissions`, `git commit -m run2`: the identical block message, and `git log` still `bdf7cef init` only.
+
+Run 3, the same staged change with `state` green, `git commit -m run3`:
+
+```
+[master 4816dc0] run3
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+```
+
+Run 4, red again, only `tests/test_x.py` (a failing test) staged, `git commit -m run4`:
+
+```
+[master 067d6ff] run4
+ 1 file changed, 2 insertions(+)
+ create mode 100644 tests/test_x.py
+```
+
+Run 5, red, `app.py` modified and unstaged, one command `git add -A && git commit -m run5` with `--allowedTools "Bash(git add *)" "Bash(git commit *)"`: the same block message as run 1; `git log` head still `067d6ff run4`, and `git status --short` shows ` M app.py`, nothing staged, so the whole command was stopped before its `git add` ran. This also shows the entry's `if: "Bash(git *)"` matches a compound command.
+
+Run 6, `git worktree add .claude/worktrees/w1 -b w1` (excluded through `.git/info/exclude`), `state` red in the worktree and green in the main checkout, `app.py` modified in the worktree, `--permission-mode bypassPermissions`, two separate Bash calls `cd .claude/worktrees/w1` then `git commit -am run6`:
+
+```
+PreToolUse:Bash hook error: [python3 "$E/plugin/hooks/scripts/red_guard.py"]: Commit stopped: the feedback command is red.
+Command: python3 check.py
+Exit code: 1
+Last 1 line of output:
+check.py in $E/repo/.claude/worktrees/w1: RED
+Fix the code and commit again. Never edit a test to reach green.
+
+This hook comes from the toolkit@inline plugin.
+```
+
+The feedback command ran in the worktree. The worktree's `git log` head is still `067d6ff run4`; `python3 check.py` in the main checkout prints `GREEN` and exits 0, so a hook reading `CLAUDE_PROJECT_DIR` would have let this commit through.
+
+Gap found: nothing in the unit tests pinned the hook entry itself. Removing `onFailure`, the `if` filter, or setting `timeout` at or below the script's 570-second limit would have reopened the gate without a red test. Added `test_hook_entry_fails_closed_and_outlasts_the_feedback_limit`: it passes, and with `timeout` temporarily set to 500 it failed with `AssertionError: 500 not greater than 570` (restored; `git diff hooks/hooks.json` empty). No fix to the script or the entry was needed. Nothing in the real repository was committed by the sessions.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+----------------------------------------------------------------------
+Ran 61 tests in 3.941s
+
+OK
+```

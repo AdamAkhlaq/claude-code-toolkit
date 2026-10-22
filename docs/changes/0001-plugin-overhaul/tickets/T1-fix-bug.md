@@ -9,6 +9,7 @@ files:
     PHILOSOPHY.md,
     GLOSSARY.md,
     skills/guide/SKILL.md,
+    tests/test_components.py,
   ]
 proves: "tests/test_components.py passes with the README skill table listing fix-bug as shipped in 0.3.0"
 status: in-progress
@@ -30,3 +31,19 @@ Seam: `tests/test_components.py`, which checks the README table against the skil
 - PHILOSOPHY "Reproduce before fixing" links the skill. The guide routes bugs to it. `GLOSSARY.md` defines test lock and regression test.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:25
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+..............................................
+----------------------------------------------------------------------
+Ran 46 tests in 1.298s
+
+OK
+```
+
+Before `skills/fix-bug/SKILL.md` existed, with the README row already at 0.3.0, `tests.test_components` failed with `AssertionError: 'fix-bug' not found in [...]: README lists fix-bug as shipped but skills/fix-bug/SKILL.md is missing`.

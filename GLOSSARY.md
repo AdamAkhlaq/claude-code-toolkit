@@ -17,6 +17,9 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Ticket graph**: the tickets of a change and their `blocked_by` edges. Validated for cycles and file overlap before any ticket runs.
 - **Frontier**: the tickets that can start now: not done, and every ticket they are blocked by is done.
 - **Blocked by**: the dependency edge. A ticket lists the ids it waits for, never the ids that wait for it.
+- **Reproduction**: the bug observed the way it was reported, same route and inputs, quoted. Required before any fix.
+- **Regression test**: the fastest test at the nearest seam that fails for the same reason as the reproduction. Committed before the fix, kept forever.
+- **Test lock**: the marker `.claude/.tests-locked`, created after the regression test is committed, under which the `lock-tests` hook blocks every edit to a test file.
 - **Seam**: a public boundary where behaviour can be observed without reaching inside. Tests are written at seams the plan agreed, nowhere else.
 - **Proves**: a ticket's single proving test, written before the code and named in the ticket's frontmatter.
 - **Feedback command**: the one command that runs the project's checks and exits non-zero on failure. Its quoted output is the evidence that a ticket is done.

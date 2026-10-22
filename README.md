@@ -45,7 +45,7 @@ This is version 0.2.0: plumbing plus the four gates and the build loop. A change
 | `plan`         | user       | 0.2.0         | Plan mode with interrogation, records seams and the execution decision |
 | `tickets`      | user       | 0.2.0         | Decomposes the plan into a validated ticket graph                      |
 | `implement`    | user       | 0.2.0         | Walks the frontier, dispatches executors, merges verified tickets      |
-| `fix-bug`      | user       | planned 0.3.0 | Reproduces as reported, locks tests, fixes                             |
+| `fix-bug`      | user       | 0.3.0         | Reproduces as reported, locks tests, fixes                             |
 | `review`       | user       | planned 0.3.0 | Three review passes from `REVIEW.md`                                   |
 | `pr-sweep`     | user       | planned 0.3.0 | Resolves comments and failing checks until green                       |
 | `diagnose`     | user       | planned 0.4.0 | Read-only diagnosis of a finding, written as a new intent              |

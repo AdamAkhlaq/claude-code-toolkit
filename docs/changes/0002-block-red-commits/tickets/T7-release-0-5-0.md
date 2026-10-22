@@ -10,7 +10,9 @@ files:
     docs/changes/0002-block-red-commits/intent.md,
   ]
 proves: "the plugin manifest says 0.5.0, CHANGELOG has a 0.5.0 section dated today that lists red-guard, and the whole test suite and `claude plugin validate .` pass"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0002-T7
 ---
 
 ## Context

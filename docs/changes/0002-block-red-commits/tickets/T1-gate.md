@@ -5,7 +5,9 @@ blocked_by: []
 files:
   [hooks/scripts/red_guard.py, hooks/hooks.json, README.md, tests/test_hooks.py]
 proves: "in tests/test_hooks.py, a `git commit` event in a repo with a pending source change and a feedback command that exits 1 makes red_guard.py exit 2 with a message naming the command, its exit code and its output, and the same event with a feedback command that exits 0 makes it exit 0 with no output"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0002-T1
 ---
 
 ## Context

@@ -4,7 +4,9 @@ title: Exercise the deploy gate end to end
 blocked_by: [T8]
 files: [README.md, tests/test_hooks.py]
 proves: "with the plugin loaded in a headless session in this repo, `git tag` is blocked by deploy-gate and the block names the authorisation route, and the same command passes with RELEASE_AUTHORIZED=1; the quoted transcripts are the evidence"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0001-T9
 ---
 
 ## Context

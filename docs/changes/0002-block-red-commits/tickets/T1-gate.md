@@ -34,3 +34,22 @@ Seam: the hook script as a subprocess, `run_hook` and `HookCase` in `tests/test_
 - `python3 -m unittest discover -s tests` passes.
 
 ## Evidence
+
+### Evidence 2026-10-22 19:34
+
+Failing first: the three new `RedGuardTests` ran before `hooks/scripts/red_guard.py` existed and all failed because the script could not be opened (`[Errno 2] No such file or directory`), the behaviour being missing.
+
+Added `hooks/scripts/red_guard.py` (`run_feedback`, `red_reason`, `main`), its entry in `hooks/hooks.json` after `secret_guard.py` with `"if": "Bash(git *)"`, `"timeout": 600`, `"onFailure": "block"`, and the README hooks-table row. In this ticket the check runs on every commit in a configured repo; T2 narrows it to commits with a pending source change. `claude plugin validate .` passes with only the expected root `CLAUDE.md` warning; `toolkit-graph validate 0002` prints `ok (7 tickets)`.
+
+Proving test: `tests.test_hooks.RedGuardTests.test_blocks_commit_on_red_and_passes_on_green`. Acceptance tests beside it: `test_non_commits_and_unconfigured_repos_never_run_the_feedback_command`, `test_quotes_only_the_last_forty_lines`.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+----------------------------------------------------------------------
+Ran 52 tests in 1.700s
+
+OK
+```

@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -225,6 +226,55 @@ class TicketSyncTests(HookCase):
         self.git("add", "src/a.py")
         code, out, _ = run_hook("ticket_sync.py", bash_event("git commit -m x"), self.root)
         self.assertEqual((code, out), (0, ""))
+
+
+PY = shlex.quote(sys.executable)
+
+
+def feedback(code, output="", marker=None):
+    """A shell command that prints `output`, optionally touches `marker`, and exits with `code`."""
+    touch = f"open({marker!r}, 'w').close(); " if marker else ""
+    return f'{PY} -c "{touch}print({output!r}); raise SystemExit({code})"'
+
+
+class RedGuardTests(HookCase):
+    def test_blocks_commit_on_red_and_passes_on_green(self):
+        self.init_repo()
+        red = feedback(1, "boom")
+        self.configure(feedbackCommand=red)
+        (self.root / "app.py").write_text("x = 1\n")
+        self.git("add", "app.py")
+        code, out, err = run_hook("red_guard.py", bash_event("git commit -m x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn(red, err)
+        self.assertIn("Exit code: 1", err)
+        self.assertIn("boom", err)
+        self.assertIn("red", err)
+        self.configure(feedbackCommand=feedback(0, "fine"))
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+
+    def test_non_commits_and_unconfigured_repos_never_run_the_feedback_command(self):
+        self.init_repo()
+        marker = self.root / "ran"
+        (self.root / "app.py").write_text("x = 1\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        self.configure(feedbackCommand="")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        self.configure(feedbackCommand=feedback(1, marker=str(marker)))
+        self.assertEqual(run_hook("red_guard.py", bash_event("git status"), self.root), (0, "", ""))
+        self.assertFalse(marker.exists())
+
+    def test_quotes_only_the_last_forty_lines(self):
+        self.init_repo()
+        self.configure(feedbackCommand=f"{PY} -c \"print('\\n'.join('line %d' % i for i in range(100))); raise SystemExit(3)\"")
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event("git commit -m x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("Exit code: 3", err)
+        self.assertIn("line 99", err)
+        self.assertIn("line 60\n", err)
+        self.assertNotIn("line 59\n", err)
 
 
 class FormatLintTests(HookCase):

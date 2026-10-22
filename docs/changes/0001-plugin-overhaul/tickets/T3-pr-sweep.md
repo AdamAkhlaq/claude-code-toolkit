@@ -4,7 +4,9 @@ title: Add the pr-sweep skill
 blocked_by: [T2]
 files: [skills/pr-sweep/SKILL.md, README.md, skills/guide/SKILL.md]
 proves: "tests/test_components.py passes with the README listing pr-sweep as shipped in 0.3.0"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0001-T3
 ---
 
 ## Context

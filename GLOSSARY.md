@@ -29,6 +29,8 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Ticket branch**: the branch one ticket is worked on, `ticket/<NNNN>-<Tn>`, created from the integration branch and merged back after verification. Checked out in its own worktree when executors run concurrently.
 - **One-way door**: a change that cannot be walked back, such as a migration or a production deploy. Runs with a human watching and behind the deploy gate.
 - **Two-way door**: a change that can be reverted cheaply. Runs unattended.
+- **Review pass**: one section of `REVIEW.md`, run by one `reviewer` agent in its own context over the change's diff. The default passes are bugs and logic, security, and compliance with the spec and plan.
+- **Waiver**: the code owner's named decision, recorded in `review.md`, not to fix an Important finding, with the reason in their words.
 - **Important**: a review finding that breaks behaviour, leaks data, breaches policy or diverges from the spec. Must be fixed or waived before merge.
 - **Nit**: any other review finding. Capped at five per review.
 - **Policy skill**: a skill that encodes one rule the project must apply consistently, such as a security or compliance standard.

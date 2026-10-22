@@ -46,7 +46,7 @@ This is version 0.2.0: plumbing plus the four gates and the build loop. A change
 | `tickets`      | user       | 0.2.0         | Decomposes the plan into a validated ticket graph                      |
 | `implement`    | user       | 0.2.0         | Walks the frontier, dispatches executors, merges verified tickets      |
 | `fix-bug`      | user       | 0.3.0         | Reproduces as reported, locks tests, fixes                             |
-| `review`       | user       | planned 0.3.0 | Three review passes from `REVIEW.md`                                   |
+| `review`       | user       | 0.3.0         | Three review passes from `REVIEW.md`                                   |
 | `pr-sweep`     | user       | planned 0.3.0 | Resolves comments and failing checks until green                       |
 | `diagnose`     | user       | planned 0.4.0 | Read-only diagnosis of a finding, written as a new intent              |
 | `postmortem`   | user       | planned 0.4.0 | Incident record, follow-up intent, eval case                           |
@@ -57,7 +57,7 @@ This is version 0.2.0: plumbing plus the four gates and the build loop. A change
 | `verify`       | model      | 0.2.0         | Runs the feedback command and records evidence                         |
 | `claude-md`    | model      | 0.2.0         | Creates or trims `CLAUDE.md`, captures repeated corrections            |
 
-Agents: `researcher` (read-only facts with citations), `implementer` (one ticket in one branch) and `verifier` (fresh-context pass or reopen). `reviewer` arrives in 0.3.0.
+Agents: `researcher` (read-only facts with citations), `implementer` (one ticket in one branch) and `verifier` (fresh-context pass or reopen) and `reviewer` (one `REVIEW.md` pass per context).
 
 ## Hooks
 

@@ -23,3 +23,19 @@ Seam: `tests/test_components.py`.
 - PHILOSOPHY "The loop closes" links the skill. The guide routes a production finding to it.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:43
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+..............................................
+----------------------------------------------------------------------
+Ran 46 tests in 1.310s
+
+OK
+```
+
+Before `skills/diagnose/SKILL.md` existed, with the README row at 0.4.0, `tests.test_components` failed with `AssertionError: 'diagnose' not found in [...]`.

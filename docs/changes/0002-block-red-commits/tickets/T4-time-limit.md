@@ -27,3 +27,22 @@ Seam: the module imported directly in `tests/test_hooks.py` (add `SCRIPTS` to `s
 - `python3 -m unittest discover -s tests` passes in about the same time as before.
 
 ## Evidence
+
+### Evidence 2026-10-22 19:41
+
+Failing first: before any code, the proving test errored with `TypeError: run_feedback() takes 2 positional arguments but 3 were given`, the limit not existing. Because a signature error says nothing about the behaviour, the test was also run against a naive version, `subprocess.run(..., timeout=limit)` with the timeout caught, swapped in temporarily and then restored: it failed with `AssertionError: child 82095 outlived the feedback command's limit`, which is the hazard the ticket names. `test_a_fault_blocks_a_commit_readably_and_never_blocks_other_commands` failed with `AssertionError: 1 != 2`, a traceback and exit 1 on `feedbackCommand: 123`.
+
+`run_feedback(command, cwd, limit)` now starts the shell with `start_new_session=True` and, past the limit, `os.killpg(..., SIGKILL)` on the group, collects what output there is, and returns `None` for the code. `guard` blocks a `None` with `timeout_reason`, which names `LIMIT_SECONDS` (570) and says a feedback command that cannot finish is treated as red. `main` is split into the commit test, where any exception exits 0, and `guard`, where any exception blocks with `red-guard could not check the commit (<type>: <message>)`. The hook entry's `timeout: 600` and `onFailure: "block"` were added in T1.
+
+Proving test: `tests.test_hooks.RedGuardTests.test_feedback_past_the_limit_is_stopped_with_its_children`, through the imported module (returns in about a second, the backgrounded `sleep 30` is gone, and `timeout_reason` names "570 seconds"). Acceptance test: `test_a_fault_blocks_a_commit_readably_and_never_blocks_other_commands`. The suite went from 57 tests in 2.9 seconds to 59 in 3.9, the extra second being the limit test itself.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+----------------------------------------------------------------------
+Ran 59 tests in 3.931s
+
+OK
+```

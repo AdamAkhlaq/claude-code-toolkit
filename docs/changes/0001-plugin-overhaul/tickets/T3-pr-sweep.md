@@ -10,7 +10,7 @@ files:
     tests/test_components.py,
   ]
 proves: "tests/test_components.py passes with the README listing pr-sweep as shipped in 0.3.0"
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0001-T3
 ---
@@ -108,3 +108,17 @@ Ran 46 tests in 1.295s
 
 OK
 ```
+
+### Verifier 2026-10-22 17:36
+
+Verdict: pass
+
+Checks:
+
+1. ticket integrity: ok. All frontmatter fields present, `files` in HEAD now lists `tests/test_components.py`, and the Evidence section carries three quoted feedback runs.
+2. proving test present and meaningful: ok. `test_invocation_matches_readme` in `tests/test_components.py` asserts a skill folder for every README row not marked planned; it predates the branch and the branch does not touch it. In an export of HEAD with `skills/pr-sweep` removed it fails with `README lists pr-sweep as shipped but skills/pr-sweep/SKILL.md is missing`.
+3. proving test run: 0, `python3 -m unittest tests.test_components` ran 10 tests, OK
+4. feedback command: 0, `python3 -m unittest discover -s tests` ran 46 tests, OK
+5. acceptance: 3 of 3 checked ok. The proving test passes (check 3). `skills/pr-sweep/SKILL.md` carries `disable-model-invocation: true` and `argument-hint: "[pull request number]"`, reads `$ARGUMENTS` with a bare fallback to `gh pr view --json number`, stops on a design-level comment (step 3 Escalate and the rules), on a check that fails again after a fix (step 4), and on a merge conflict with the base branch (step 1 precondition via `gh pr view --json mergeable` and the last rule). The guide table routes "A pull request with unresolved comments or red checks" to `/toolkit:pr-sweep <n>`.
+6. scope: ok. Branch changes README.md, skills/guide/SKILL.md, skills/pr-sweep/SKILL.md, tests/test_components.py and the ticket file; all are in `files` or exempt. `bin/toolkit-graph validate 0001-plugin-overhaul` prints `ok (4 tickets)`.
+7. tests intact: ok. The only test change is the push rule, rewritten rather than dropped, with the reason recorded in the 17:32 evidence. Ran both regex sets over every skill: the six user-invoked skills the old rule bound to "never push" (implement, intent, plan, review, spec, tickets) still take that branch, fix-bug is newly bound to it, and only pr-sweep takes the approval-plus-never-force-push branch. No skips or expected failures.

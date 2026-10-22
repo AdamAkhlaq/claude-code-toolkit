@@ -108,9 +108,10 @@ class AgentRules(unittest.TestCase):
             self.assertNotIn("*", tools, f"agents/{name}: an allowlist names tools, it does not grant all of them")
 
     def test_readers_cannot_write(self):
-        meta, _ = agents()["researcher"]
-        for tool in ("Edit", "Write", "NotebookEdit", "Agent"):
-            self.assertNotIn(tool, meta["tools"], f"agents/researcher: must not carry {tool}")
+        for name in ("researcher", "reviewer"):
+            meta, _ = agents()[name]
+            for tool in ("Edit", "Write", "NotebookEdit", "Agent"):
+                self.assertNotIn(tool, meta["tools"], f"agents/{name}: must not carry {tool}")
 
     def test_readme_names_every_agent(self):
         readme = (REPO / "README.md").read_text(encoding="utf-8")

@@ -11,6 +11,7 @@ files:
     PHILOSOPHY.md,
     GLOSSARY.md,
     skills/guide/SKILL.md,
+    tests/test_components.py,
   ]
 proves: "tests/test_components.py passes with the README listing review as shipped in 0.3.0 and the reviewer agent carrying a read-only tool allowlist"
 status: in-progress
@@ -33,3 +34,19 @@ Seam: `tests/test_components.py`. Extend it so the reviewer agent, like the rese
 - PHILOSOPHY "Verification is independent" links `review` and `reviewer`; the guide routes a finished change to `review`.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:27
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+..............................................
+----------------------------------------------------------------------
+Ran 46 tests in 1.296s
+
+OK
+```
+
+Before `agents/reviewer.md` and `skills/review/SKILL.md` existed, with the README row at 0.3.0 and the read-only assertion extended to the reviewer, `tests.test_components` failed with `KeyError: 'reviewer'` and `AssertionError: 'review' not found in [...]`.

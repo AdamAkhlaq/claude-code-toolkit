@@ -1,7 +1,7 @@
 ---
 id: "0002"
 slug: "block-red-commits"
-status: building
+status: shipped
 originator: "Adam Akhlaq"
 accepted_by: "Adam Akhlaq"
 created: "2026-10-22"
@@ -71,3 +71,7 @@ The spec widens the exception from "test files and the change's documents" to te
 ## Amendment 2026-10-22: building
 
 Seven tickets, T1 to T7, in one chain, executed `single` as the plan records, on the integration branch `change/0002-block-red-commits`.
+
+## Amendment 2026-10-22: shipped
+
+Released as v0.5.0. Tickets T1 to T7 ran `single` on `change/0002-block-red-commits`, each passed by a verifier in a fresh context. The worktree bug found in the existing hooks is change 0003.

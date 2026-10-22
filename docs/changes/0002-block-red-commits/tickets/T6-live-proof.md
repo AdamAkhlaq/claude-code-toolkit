@@ -4,7 +4,9 @@ title: red-guard holds in a real Claude Code session
 blocked_by: [T5]
 files: [hooks/scripts/red_guard.py, hooks/hooks.json, tests/test_hooks.py]
 proves: "with the plugin loaded from a clone in headless sessions against a temporary repo, a red source commit is blocked and the session reports the failing output (also under --permission-mode bypassPermissions), the same commit lands once green, a test-only red commit lands, `git add -A && git commit` on red is blocked, and a commit from a worktree under .claude/worktrees/ runs the feedback command there; the quoted transcripts are the evidence"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0002-T6
 ---
 
 ## Context

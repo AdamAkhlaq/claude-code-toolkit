@@ -75,7 +75,7 @@ class SkillRules(unittest.TestCase):
                 self.assertEqual(flag, "false", f"skills/{name}: model-invoked skills must stay model-invocable")
         for name, row in listed.items():
             if "planned" not in row[2]:
-                self.assertIn(name, skills(), f"README lists {name} as shipped but skills/{name}/SKILL.md is missing")
+                self.assertIn(name, sorted(skills()), f"README lists {name} as shipped but skills/{name}/SKILL.md is missing")
 
     def test_no_component_calls_a_user_invoked_skill(self):
         all_skills = skills()

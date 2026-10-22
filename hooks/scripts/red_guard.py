@@ -12,7 +12,7 @@ can record a reopen on a red tree.
 import subprocess
 import sys
 
-from _common import block, first_match, git, is_git_commit, load_config, project_dir, read_event, tool_input
+from _common import block, commit_checkout, first_match, git, is_git_commit, load_config, read_event, tool_input
 
 TAIL_LINES = 40
 WORKFLOW_FILES = ("GLOSSARY.md", "REVIEW.md")
@@ -75,10 +75,11 @@ def red_reason(command: str, code: int, output: str) -> str:
 
 
 def main() -> int:
-    command = tool_input(read_event()).get("command") or ""
+    event = read_event()
+    command = tool_input(event).get("command") or ""
     if not is_git_commit(command):
         return 0
-    root = project_dir()
+    root = commit_checkout(event, command)
     config = load_config(root)
     if config is None:
         return 0

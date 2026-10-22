@@ -317,6 +317,26 @@ class RedGuardTests(HookCase):
         self.git("mv", "README.md", "docs/README.md")
         self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root)[0], 2)
 
+    def test_checks_the_worktree_the_commit_lands_in(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(0))
+        (self.root / ".git" / "info" / "exclude").write_text(".claude/worktrees/\n")
+        worktree = self.root / ".claude" / "worktrees" / "w1"
+        self.git("worktree", "add", "-q", str(worktree), "-b", "w1")
+        (worktree / ".claude" / "toolkit.json").write_text(json.dumps({"feedbackCommand": feedback(1, "worktree is red")}))
+        (self.root / "app.py").write_text("x = 1\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        in_worktree = {**bash_event("git commit -m x"), "cwd": str(worktree)}
+        for event in (
+            in_worktree,
+            bash_event("git -C .claude/worktrees/w1 commit -m x"),
+            bash_event(f"git -C {worktree} commit -m x"),
+            bash_event("cd .claude/worktrees/w1 && git add -A && git commit -m x"),
+        ):
+            code, _, err = run_hook("red_guard.py", event, self.root)
+            self.assertEqual(code, 2, event)
+            self.assertIn("worktree is red", err)
+
     def test_quotes_only_the_last_forty_lines(self):
         self.init_repo()
         self.configure(feedbackCommand=f"{PY} -c \"print('\\n'.join('line %d' % i for i in range(100))); raise SystemExit(3)\"")

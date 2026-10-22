@@ -29,3 +29,22 @@ Seam: the hook script as a subprocess, `tests/test_hooks.py`. `run_hook` sets `C
 - `python3 -m unittest discover -s tests` passes.
 
 ## Evidence
+
+### Evidence 2026-10-22 19:38
+
+Failing first: `test_checks_the_worktree_the_commit_lands_in` failed with `AssertionError: 0 != 2` on the event whose `cwd` is the worktree: the hook checked the main checkout, whose feedback command is green, instead of the worktree, whose feedback command is red.
+
+Added `commit_checkout(event, command)` to `hooks/scripts/_common.py` and switched `red_guard.py` from `project_dir()` to it. The command is tokenised with `shlex` (falling back to whitespace on unbalanced quotes) so quoted directories survive; `~` is expanded. One refinement over the Context's "in order" list: a leading `cd <dir> &&` and a `git -C <dir>` on the commit compose, `cd` first, then each `-C` in turn, as the shell and git would apply them, instead of `-C` replacing `cd`. When `git rev-parse --show-toplevel` fails, including for a directory that does not exist, the directory itself is used. The existing hooks still use `project_dir()`; moving them is change 0003.
+
+The test covers four forms against a linked worktree at `.claude/worktrees/w1` (excluded through `.git/info/exclude`, as `implement` does): event `cwd`, relative `git -C`, absolute `git -C`, and `cd <worktree> && git add -A && git commit`; plus the same commit with no `cwd`, which checks the green main checkout and exits 0. The T1 and T2 tests pass unchanged, their events carrying no `cwd`.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+----------------------------------------------------------------------
+Ran 57 tests in 2.862s
+
+OK
+```

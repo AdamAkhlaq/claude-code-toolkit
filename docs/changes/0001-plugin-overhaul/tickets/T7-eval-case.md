@@ -13,7 +13,9 @@ files:
     .gitignore,
   ]
 proves: "tests/test_components.py passes with the README skill table listing eval-case as shipped in 0.4.0"
-status: todo
+status: done
+executed_by: single
+branch: ticket/0001-T7
 ---
 
 ## Context
@@ -31,3 +33,35 @@ Seam: `tests/test_components.py`.
 - PHILOSOPHY "Mistakes become memory" links the skill. `GLOSSARY.md` defines eval case and grader. The guide routes "make sure this never happens again" to it.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:47
+
+The T6 verifier noted that prettier rewrites unquoted `{{X}}` placeholders inside the template's fenced YAML to `{ { X } }`; the template now uses `<PLACEHOLDER>`, which prettier leaves alone.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+..............................................
+----------------------------------------------------------------------
+Ran 46 tests in 1.331s
+
+OK
+```
+
+Before `skills/eval-case/SKILL.md` existed, with the README row at 0.4.0, `tests.test_components` failed with `AssertionError: 'eval-case' not found in [...]`.
+
+### Verifier 2026-10-22 17:48
+
+Verdict: pass
+
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. `tests/test_components.py::SkillRules::test_invocation_matches_readme` asserts `skills/<name>/SKILL.md` exists for every README skill row whose version cell lacks "planned"; this branch moves `eval-case` from `planned 0.4.0` to `0.4.0`, so the test fails without the skill. The test predates the branch and is unchanged, which is the seam the ticket names.
+3. proving test run: 0, `python3 -m unittest tests.test_components`: Ran 10 tests in 0.014s, OK
+4. feedback command: 0, `python3 -m unittest discover -s tests`: Ran 46 tests in 1.299s, OK
+5. acceptance: 5 of 5 checked, none failed. Proving test passes (check 3). `skills/eval-case/SKILL.md` carries `disable-model-invocation: true`, an `argument-hint` of task, incident or behaviour, and binds `$ARGUMENTS` as the subject. `templates/eval-case.md` shows a full `prompt.md` (name, description, tags, max_turns, allowed_tools, body) and one grader each of `regex`, `tool_used` (positive and negative), `tool_order`, `file_exists` and `llm`, the five kinds the skill recommends. `.gitignore` ends with `evals/results/`. PHILOSOPHY "Mistakes become memory" links `./skills/eval-case/SKILL.md`; GLOSSARY defines "Eval case" and "Grader"; the guide table routes "Make sure this never happens again" to `/toolkit:eval-case`. Also checked: no em dash in any changed file, `prettier --check` clean on all changed Markdown, `claude plugin validate .` passes with only the pre-existing CLAUDE.md warning.
+6. scope: ok. Changed on the branch: `.gitignore`, `GLOSSARY.md`, `PHILOSOPHY.md`, `README.md`, `skills/eval-case/SKILL.md`, `skills/guide/SKILL.md`, `templates/eval-case.md` and the ticket file; all in `files`.
+7. tests intact: ok. `git diff change/0001-phase-3...HEAD -- tests/` is empty.

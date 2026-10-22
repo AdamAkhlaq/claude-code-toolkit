@@ -8,6 +8,7 @@ config is absent. A hook only ever acts on a project that opted in.
 import fnmatch
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -135,6 +136,40 @@ def is_git_commit(command: str) -> bool:
         if rest and rest[0] == "commit":
             return True
     return False
+
+
+def commit_checkout(event: dict, command: str) -> Path:
+    """The top level of the checkout a `git commit` in `command` lands in.
+
+    Starts from the event's `cwd`, the shell's real directory, falling back to
+    the project directory; then applies a leading `cd <dir> &&` and any
+    `git -C <dir>` on the commit. Inside a worktree this differs from
+    `CLAUDE_PROJECT_DIR`, which always names the main checkout.
+    """
+    directory = Path(event.get("cwd") or project_dir())
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    if len(tokens) >= 3 and tokens[0] == "cd" and tokens[2] == "&&":
+        directory = directory / os.path.expanduser(tokens[1])
+    for index, token in enumerate(tokens):
+        if token != "git":
+            continue
+        rest = tokens[index + 1 :]
+        dirs = []
+        while rest and rest[0].startswith("-"):
+            flag = rest.pop(0)
+            if flag in ("-C", "-c", "--git-dir", "--work-tree") and rest:
+                value = rest.pop(0)
+                if flag == "-C":
+                    dirs.append(value)
+        if rest and rest[0] == "commit":
+            for value in dirs:
+                directory = directory / os.path.expanduser(value)
+            break
+    top = git(directory, "rev-parse", "--show-toplevel")
+    return Path(top.strip()) if top else directory
 
 
 def commits_all_tracked(command: str) -> bool:

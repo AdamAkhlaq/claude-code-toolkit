@@ -10,6 +10,7 @@ files:
     PHILOSOPHY.md,
     GLOSSARY.md,
     skills/guide/SKILL.md,
+    templates/eval-case.md,
   ]
 proves: "tests/test_components.py passes with the README skill table listing postmortem as shipped in 0.4.0"
 status: in-progress
@@ -31,3 +32,21 @@ Seam: `tests/test_components.py`.
 - PHILOSOPHY "Mistakes become memory" and "The loop closes" link the skill. `GLOSSARY.md` defines incident and follow-up. The guide routes an incident to it.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:45
+
+`templates/eval-case.md` was added to this ticket's files: `eval-case` is user-invoked, so `postmortem` cannot call it and instead writes the eval case from the template directly, which therefore has to exist here rather than first in T7. T7 keeps the template in its list and may refine it.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+..............................................
+----------------------------------------------------------------------
+Ran 46 tests in 1.334s
+
+OK
+```
+
+Before `skills/postmortem/SKILL.md` existed, with the README row at 0.4.0, `tests.test_components` failed with `AssertionError: 'postmortem' not found in [...]`.

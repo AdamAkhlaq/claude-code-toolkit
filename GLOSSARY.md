@@ -31,6 +31,8 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Two-way door**: a change that can be reverted cheaply. Runs unattended.
 - **Review pass**: one section of `REVIEW.md`, run by one `reviewer` agent in its own context over the change's diff. The default passes are bugs and logic, security, and compliance with the spec and plan.
 - **Waiver**: the code owner's named decision, recorded in `review.md`, not to fix an Important finding, with the reason in their words.
+- **Incident**: something that affected users or broke production. Recorded blamelessly under `docs/incidents/` with a timeline, a root cause and follow-ups.
+- **Follow-up**: an item an incident record leaves behind, in one of three forms: an intent (work), a rule (a `CLAUDE.md` line or a policy skill), or an eval case.
 - **Important**: a review finding that breaks behaviour, leaks data, breaches policy or diverges from the spec. Must be fixed or waived before merge.
 - **Nit**: any other review finding. Capped at five per review.
 - **Policy skill**: a skill that encodes one rule the project must apply consistently, such as a security or compliance standard.

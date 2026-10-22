@@ -30,3 +30,19 @@ Seam: `tests/test_components.py`.
 - The guide routes "make the project always do X" to it.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:49
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+..............................................
+----------------------------------------------------------------------
+Ran 46 tests in 1.368s
+
+OK
+```
+
+Before `skills/policy-skill/SKILL.md` existed, with the README row at 0.4.0, `tests.test_components` failed with `AssertionError: 'policy-skill' not found in [...]`.

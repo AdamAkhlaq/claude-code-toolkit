@@ -63,3 +63,7 @@ It is shown working in a real Claude Code session with the plugin loaded, not on
 - Open, decision, owner the originator at the spec gate: what happens when the feedback command outlives the hook timeout, letting the commit through or stopping it.
 - Open, decision, owner the originator at the spec gate: whether the feedback command runs against the working tree or only what is staged, when the two differ.
 - Open, fact, for the spec: how a PreToolUse block behaves under `bypassPermissions` and inside subagents. The hooks reference does not say; settle it in a live session.
+
+## Amendment 2026-10-22: spec decisions
+
+The spec widens the exception from "test files and the change's documents" to test files and every workflow document (anything under `docs/`, `GLOSSARY.md`, `REVIEW.md`), so gate, claim and verifier commits on a red tree land too. The open questions are settled there: docs-only commits skip the check; a feedback command that does not finish in time stops the commit; the check runs against the working tree. The fact on permission modes is settled live: a block holds under `bypassPermissions` and inside subagents. The same probe found that the existing hooks resolve paths against the main checkout inside a worktree; that is change 0003.

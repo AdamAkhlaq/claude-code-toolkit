@@ -4,6 +4,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -336,6 +337,39 @@ class RedGuardTests(HookCase):
             code, _, err = run_hook("red_guard.py", event, self.root)
             self.assertEqual(code, 2, event)
             self.assertIn("worktree is red", err)
+
+    def test_feedback_past_the_limit_is_stopped_with_its_children(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import red_guard
+
+        started = time.monotonic()
+        code, _ = red_guard.run_feedback("sleep 30 & echo $! > pid; wait", self.root, 1)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertIsNone(code)
+        child = int((self.root / "pid").read_text())
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            self.fail(f"child {child} outlived the feedback command's limit")
+        reason = red_guard.timeout_reason("make check", red_guard.LIMIT_SECONDS, "")
+        self.assertIn("570 seconds", reason)
+        self.assertIn("red", reason)
+
+    def test_a_fault_blocks_a_commit_readably_and_never_blocks_other_commands(self):
+        self.init_repo()
+        self.configure(feedbackCommand=123)
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event("git commit -m x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("red-guard", err)
+        self.assertNotIn("Traceback", err)
+        result = subprocess.run([sys.executable, str(SCRIPTS / "red_guard.py")], input="not json", capture_output=True, text=True, cwd=self.root, check=False)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
 
     def test_quotes_only_the_last_forty_lines(self):
         self.init_repo()

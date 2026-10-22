@@ -23,6 +23,13 @@
           },
           {
             "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/red_guard.py\"",
+            "if": "Bash(git *)",
+            "timeout": 600,
+            "onFailure": "block"
+          },
+          {
+            "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ticket_sync.py\""
           },
           {

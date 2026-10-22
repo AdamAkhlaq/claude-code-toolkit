@@ -72,6 +72,16 @@ class FrontmatterTests(unittest.TestCase):
         self.assertEqual(data["count"], 4)
         self.assertIsNone(data["empty"])
 
+    def test_flow_list_wrapped_over_lines_as_prettier_writes_it(self):
+        data = graph.parse_frontmatter(
+            "---\nid: T1\nfiles:\n  [\n    skills/a/SKILL.md,\n    README.md,\n  ]\nblocked_by:\n  [T2]\nstatus: todo\n---\n"
+        )
+        self.assertEqual(data["files"], ["skills/a/SKILL.md", "README.md"])
+        self.assertEqual(data["blocked_by"], ["T2"])
+        self.assertEqual(data["status"], "todo")
+        with self.assertRaises(graph.GraphError):
+            graph.parse_frontmatter("---\nfiles:\n  [\n    a.md,\n---\n")
+
     def test_missing_and_unterminated_frontmatter(self):
         with self.assertRaises(graph.GraphError):
             graph.parse_frontmatter("no frontmatter\n")

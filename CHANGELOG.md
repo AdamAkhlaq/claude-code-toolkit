@@ -4,6 +4,10 @@ All notable changes to this plugin are recorded here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed
+
+- `toolkit-graph` reads a ticket whose `files` or `blocked_by` list a formatter wrapped over several lines, which prettier does for long lists.
+
 ## [0.2.0] - 2026-10-22
 
 Phase 1: plan through build. The four gates and the build loop are live, so a change can go from an idea to merged tickets inside one plugin.

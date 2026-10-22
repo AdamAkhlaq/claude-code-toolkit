@@ -72,6 +72,8 @@ All hooks read `.claude/toolkit.json` in the consuming repo and do nothing when 
 | `deploy-gate`   | before Bash         | `gatedCommands`         | Blocks matching commands unless `RELEASE_AUTHORIZED` is set or `.claude/.release-authorized` exists |
 | `format-lint`   | after Edit, Write   | `formatters`, `linters` | Runs matching commands on the changed file, surfaces failures                                       |
 
+A gated command is a one-way door. When `deploy-gate` blocks one, the agent prepares everything up to that step and stops; a human then authorises the release for the session with `export RELEASE_AUTHORIZED=1`, or for the checkout by creating `.claude/.release-authorized`, and the same command goes through. Both routes are named in the block message, and the hook fires inside a real session with the plugin loaded, not only in the unit tests.
+
 ## Configuration
 
 `.claude/toolkit.json`, written by `setup`:

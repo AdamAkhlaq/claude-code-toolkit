@@ -4,7 +4,7 @@ title: red-guard holds in a real Claude Code session
 blocked_by: [T5]
 files: [hooks/scripts/red_guard.py, hooks/hooks.json, tests/test_hooks.py]
 proves: "with the plugin loaded from a clone in headless sessions against a temporary repo, a red source commit is blocked and the session reports the failing output (also under --permission-mode bypassPermissions), the same commit lands once green, a test-only red commit lands, `git add -A && git commit` on red is blocked, and a commit from a worktree under .claude/worktrees/ runs the feedback command there; the quoted transcripts are the evidence"
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0002-T6
 ---
@@ -94,3 +94,16 @@ Ran 61 tests in 3.941s
 
 OK
 ```
+
+### Verifier 2026-10-22 19:48
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. The live proof was reproduced in a fresh clone of `ticket/0002-T6` at `78862c8` and a fresh throwaway repo under the scratchpad's `verify-t6/` (Claude Code 2.1.304, `--plugin-dir <clone> -p`, `< /dev/null`, `check.py` printing `verify-check in <cwd>: <STATE>`). Run 1 (red, `app.py` staged, `--allowedTools "Bash(git commit *)"`): `Commit stopped: the feedback command is red.` with `Command: python3 check.py`, `Exit code: 1`, `verify-check in .../verify-t6/repo: RED`; `git log --oneline`: `f4aa750 init` only, `M  app.py` still staged. Run 2 (same, `--permission-mode bypassPermissions`): identical block, `git log` still `f4aa750 init`. Run 3 (green): `[master 695948b] v3`. Run 4 (red, only `tests/test_x.py` staged, `python3 check.py` exits 1): `[master bf0c6c9] v4`. Run 5 (red, `git add -A && git commit -m v5` in one call): the same block; `git log` head `bf0c6c9 v4`, `git status --short` ` M app.py`, nothing staged. Run 6 (`.claude/worktrees/w1` red, main checkout green and exiting 0, bypassPermissions, `cd .claude/worktrees/w1` then `git commit -am v6` as two calls): block reading `verify-check in .../verify-t6/repo/.claude/worktrees/w1: RED`; worktree `git log` head `bf0c6c9 v4`, ` M app.py`. The new unit test fails when the entry is weakened in the clone: `timeout` 500 gives `AssertionError: 500 not greater than 570`, removing `onFailure` gives `AssertionError: None != 'block'`.
+3. proving test run: 0, `test_hook_entry_fails_closed_and_outlasts_the_feedback_limit` `Ran 1 test ... OK`
+4. feedback command: 0, `Ran 61 tests in 3.912s` `OK`
+5. acceptance: 3 of 3 checked. Transcripts and `git log` lines quoted for all six runs in the executor's evidence and reproduced above; the gap (the hook entry unpinned) has a unit test; `python3 -m unittest discover -s tests` exits 0.
+6. scope: ok (`tests/test_hooks.py` and the ticket file only)
+7. tests intact: ok (one test added, nothing removed or loosened)

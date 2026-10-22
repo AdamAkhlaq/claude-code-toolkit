@@ -4,7 +4,7 @@ title: Commits that change only workflow documents and tests skip the check
 blocked_by: [T1]
 files: [hooks/scripts/red_guard.py, tests/test_hooks.py]
 proves: "in tests/test_hooks.py, with a feedback command that exits 1, a `git commit` whose pending changes are only a file under docs/, GLOSSARY.md and a file matching testGlobs exits 0 without running the feedback command, and adding one untracked source file makes it exit 2"
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0002-T2
 ---
@@ -48,3 +48,17 @@ Ran 56 tests in 2.366s
 
 OK
 ```
+
+### Verifier 2026-10-22 19:37
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. `test_only_workflow_documents_and_tests_skip_the_check` runs the hook as a subprocess (the plan's seam) with a red feedback command that writes a marker: staged `docs/changes/0009-x/intent.md` and `GLOSSARY.md` plus untracked `tests/test_x.py` exit 0 with no marker, then an untracked `app.py` exits 2 with the marker and "boom" quoted. In a scratch copy it fails against the integration branch's `red_guard.py` and fails again with `--untracked-files=no` (`0 != 2`).
+3. proving test run: 0, `Ran 4 tests in 0.643s OK` (proving test plus the three acceptance tests beside it)
+4. feedback command: 0, `Ran 56 tests in 2.332s OK`
+5. acceptance: 4 of 4 checked. Proving test passes (check 3). Unstaged and staged changes to tracked `README.md` both exit 2 (`test_staged_and_unstaged_source_changes_both_count`). `docs/my notes.md` skips, `my app.py` exits 2, `lib/GLOSSARY.md` exits 2 (`test_paths_with_spaces_and_nested_workflow_names_are_classified`; `git` in `_common` does not strip output, so the leading space of ` M` entries survives the `-z` parse). Full suite passes (check 4).
+6. scope: ok (`hooks/scripts/red_guard.py`, `tests/test_hooks.py`, the ticket file)
+7. tests intact: ok, the diff to `tests/` only adds lines
+   Note: counting both sides of a rename departs from the Context's "take the destination"; the departure is recorded above, follows spec requirement 4, and is pinned by `test_renaming_source_into_docs_still_runs_the_check`.

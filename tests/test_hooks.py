@@ -360,6 +360,18 @@ class RedGuardTests(HookCase):
         self.assertIn("570 seconds", reason)
         self.assertIn("red", reason)
 
+    def test_hook_entry_fails_closed_and_outlasts_the_feedback_limit(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import red_guard
+
+        config = json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        entries = [hook for group in config["hooks"]["PreToolUse"] for hook in group["hooks"] if "red_guard.py" in hook["command"]]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry.get("onFailure"), "block")
+        self.assertEqual(entry.get("if"), "Bash(git *)")
+        self.assertGreater(entry.get("timeout", 0), red_guard.LIMIT_SECONDS)
+
     def test_a_fault_blocks_a_commit_readably_and_never_blocks_other_commands(self):
         self.init_repo()
         self.configure(feedbackCommand=123)

@@ -5,7 +5,9 @@ blocked_by: [T4]
 files:
   [skills/diagnose/SKILL.md, README.md, PHILOSOPHY.md, skills/guide/SKILL.md]
 proves: "tests/test_components.py passes with the README skill table listing diagnose as shipped in 0.4.0"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0001-T5
 ---
 
 ## Context

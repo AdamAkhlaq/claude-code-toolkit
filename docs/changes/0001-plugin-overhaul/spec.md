@@ -117,3 +117,12 @@ A user-invoked skill may call model-invoked skills through the Skill tool, namin
 ## Amendment 2026-10-21: hooks and the graph tool are Python
 
 Hook scripts are `hooks/scripts/<name>.py`, not `.sh`, and share `hooks/scripts/_common.py`. The graph tool is Python too. Both use the standard library only, so a consuming repo needs `python3` and `git` and nothing else, and there is no `jq` dependency. One extra config key exists: `secretAllowlist`, paths where credential-looking strings are expected, read by `secret-guard`. Path patterns with no `/` other than a trailing one match anywhere in the tree.
+
+## Amendment 2026-10-22: build conventions settled in phase 1
+
+- The integration branch is `change/<NNNN>-<slug>`; ticket branches are `ticket/<NNNN>-<Tn>`, created from it. Ticket commits carry a `Ticket: <NNNN>-<Tn>` trailer beside `Change: <NNNN>`.
+- Worktrees live at `.claude/worktrees/<NNNN>-<Tn>/`, excluded through `.git/info/exclude`. In `single` execution the ticket branch is checked out in the main working tree, because a worktree exists to isolate concurrent executors and there is only one.
+- The executor leaves a ticket `in-progress` with its evidence; only the `verifier` sets `done` or `reopened`, so the frontier never unblocks a dependent before verification.
+- A one-way-door decision in a plan is recorded as an ADR from `templates/adr.md`, which joins the template list.
+- The invocation rules (user-invoked skills carry `disable-model-invocation: true`, no skill names a user-invoked skill, every agent has a tool allowlist) and the completeness of the README and `PHILOSOPHY.md` tables are checked by `tests/test_components.py`, resolving the open question on whether composition over configuration gets a script.
+- In `single` execution the `implement` skill follows the executor steps in `agents/implementer.md` itself, in the session. This is the one cross-folder file reference in the plugin, kept so the executor contract exists in exactly one place.

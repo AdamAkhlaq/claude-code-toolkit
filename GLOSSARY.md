@@ -4,7 +4,10 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 
 - **Change**: one unit of work from idea to merge. Lives at `docs/changes/<NNNN>-<slug>/` and owns an intent, a spec, a plan and a ticket graph.
 - **Change id**: the zero-padded sequence number of a change, allocated by `toolkit-graph new`. Appears as a `Change: NNNN` commit trailer.
+- **Definition of ready**: what must hold before an intent passes its gate: a problem with an owner and a cost and no solution in it, an observable outcome, facts looked up, decisions answered or owned, affected code located.
 - **Gate**: a point where a human accepts or rejects an artifact before the next stage starts. The four gates are intent, spec, plan and tickets.
+- **Amendment**: a dated section appended to a committed artifact when something changed after its gate. The only way an artifact changes once committed.
+- **ADR**: an architecture decision record under `docs/adr/`, written when a plan chooses or rejects a one-way door.
 - **Artifact**: a committed Markdown file with YAML frontmatter that a gate produces. Amended after its gate with a dated section, never rewritten.
 - **Intent**: the first artifact. The problem and the proposed outcome in the originator's own words, plus what was found by looking.
 - **Spec**: the second artifact. The agreed outcome in testable terms, scope, requirements, and policy conflicts.
@@ -19,7 +22,8 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Feedback command**: the one command that runs the project's checks and exits non-zero on failure. Its quoted output is the evidence that a ticket is done.
 - **Evidence**: the quoted output of the feedback command, recorded in the ticket, and the verifier's verdict beneath it.
 - **Executor**: whoever works a ticket: a single agent in the session, a subagent, an agent team member, or a headless run. Chosen per change in the plan, overridable per ticket.
-- **Integration branch**: the branch a change's tickets merge into, one worktree branch per ticket, after the verifier passes.
+- **Integration branch**: the branch a change's tickets merge into, named `change/<NNNN>-<slug>`, after the verifier passes each ticket.
+- **Ticket branch**: the branch one ticket is worked on, `ticket/<NNNN>-<Tn>`, created from the integration branch and merged back after verification. Checked out in its own worktree when executors run concurrently.
 - **One-way door**: a change that cannot be walked back, such as a migration or a production deploy. Runs with a human watching and behind the deploy gate.
 - **Two-way door**: a change that can be reverted cheaply. Runs unattended.
 - **Important**: a review finding that breaks behaviour, leaks data, breaches policy or diverges from the spec. Must be fixed or waived before merge.

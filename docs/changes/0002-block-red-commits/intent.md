@@ -1,7 +1,7 @@
 ---
 id: "0002"
 slug: "block-red-commits"
-status: accepted
+status: building
 originator: "Adam Akhlaq"
 accepted_by: "Adam Akhlaq"
 created: "2026-10-22"
@@ -67,3 +67,7 @@ It is shown working in a real Claude Code session with the plugin loaded, not on
 ## Amendment 2026-10-22: spec decisions
 
 The spec widens the exception from "test files and the change's documents" to test files and every workflow document (anything under `docs/`, `GLOSSARY.md`, `REVIEW.md`), so gate, claim and verifier commits on a red tree land too. The open questions are settled there: docs-only commits skip the check; a feedback command that does not finish in time stops the commit; the check runs against the working tree. The fact on permission modes is settled live: a block holds under `bypassPermissions` and inside subagents. The same probe found that the existing hooks resolve paths against the main checkout inside a worktree; that is change 0003.
+
+## Amendment 2026-10-22: building
+
+Seven tickets, T1 to T7, in one chain, executed `single` as the plan records, on the integration branch `change/0002-block-red-commits`.

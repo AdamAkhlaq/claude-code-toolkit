@@ -181,6 +181,13 @@ class PhilosophyRules(unittest.TestCase):
             for target in re.findall(r"\]\(\./([^)]+)\)", cell):
                 self.assertTrue((REPO / target).exists(), f"PHILOSOPHY.md links to missing {target}")
 
+    def test_every_hook_enforces_a_principle(self):
+        linked = {target for cell in self.enforcers() for target in re.findall(r"\]\(\./([^)]+)\)", cell)}
+        for script in sorted((HOOKS / "scripts").glob("*.py")):
+            if script.stem.startswith("_"):
+                continue
+            self.assertIn(f"hooks/scripts/{script.name}", linked, f"PHILOSOPHY.md's Enforced by column does not link hook {script.stem.replace('_', '-')}")
+
     def test_shipped_components_are_linked_not_just_named(self):
         shipped = {f"skills/{n}/SKILL.md": n for n in skills()}
         shipped.update({f"agents/{n}.md": n for n in agents()})

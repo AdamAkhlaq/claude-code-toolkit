@@ -38,3 +38,25 @@ Seam: the repo's shape rules, `tests/test_components.py`.
 - `python3 -m unittest discover -s tests` passes.
 
 ## Evidence
+
+### Evidence 2026-10-22 19:43
+
+Failing first: `test_every_hook_enforces_a_principle` failed with `'hooks/scripts/red_guard.py' not found in {...} : PHILOSOPHY.md's Enforced by column does not link hook red-guard`; `grep -c` found neither `hooks/scripts/red_guard.py` nor `hooks/scripts/ticket_sync.py` in `PHILOSOPHY.md` (0 and 0), so the test would have failed on `ticket-sync` next.
+
+- `PHILOSOPHY.md`: linked `red-guard` in "Skills advise, hooks enforce" between `lock-tests` and `deploy-gate`, added "red commits" to that section's list, linked `ticket-sync` in "Artifacts are tool-agnostic". Prettier realigned the table, which is why the diff touches every row.
+- `agents/implementer.md`: step 6 says the hook stops a commit while red; step 7 says a block there means the suite went red after the last run, so go back to step 6.
+- `skills/verify/SKILL.md`, "When it fails": a new line, do not commit while red, and what `red-guard` checks.
+- `skills/fix-bug/SKILL.md` step 7: leave every source file unchanged, because the failing-test commit passes only while nothing but test files and workflow documents have changed, staged or not.
+
+Proving test: `tests.test_components.PhilosophyRules.test_every_hook_enforces_a_principle`. The existing `test_every_link_resolves` and `test_shipped_components_are_linked_not_just_named` pass.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+----------------------------------------------------------------------
+Ran 60 tests in 3.927s
+
+OK
+```

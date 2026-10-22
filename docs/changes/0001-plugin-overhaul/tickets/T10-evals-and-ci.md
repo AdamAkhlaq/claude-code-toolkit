@@ -59,3 +59,14 @@ OK
 Before `evals/` existed, `tests.test_components.EvalSuiteRules` failed with `AssertionError: 0 not greater than or equal to 3 : evals/ must hold at least three cases`.
 
 GitHub Action: see the next evidence block, recorded after the workflow's first run.
+
+### Evidence 2026-10-22 17:57 (GitHub Action)
+
+The workflow was triggered by a temporary draft pull request from this ticket branch into the integration branch (#5, closed unmerged once recorded). Run https://github.com/AdamAkhlaq/claude-code-toolkit/actions/runs/39818381023, conclusion `success`, job `validate` in 13 seconds on `ubuntu-latest` with no credentials in the environment:
+
+```
+Unit tests            Ran 49 tests in 1.638s / OK
+Validate the plugin   claude plugin validate .   (exit 0, Claude Code 2.1.304 from npm)
+```
+
+So `claude plugin validate` needs no authentication, which the docs left unsaid. The job pins `@anthropic-ai/claude-code@2.1.304` on Node 22 and Python 3.12.

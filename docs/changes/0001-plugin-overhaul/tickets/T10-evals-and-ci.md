@@ -11,7 +11,9 @@ files:
     tests/test_components.py,
   ]
 proves: "tests/test_components.py checks that every case under evals/ has a prompt.md with a name and at least one grader with a known type, and the suite has at least three cases that pass that check; the workflow runs the unit tests and plugin validation on every pull request"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0001-T10
 ---
 
 ## Context

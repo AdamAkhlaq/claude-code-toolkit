@@ -30,3 +30,32 @@ Seam: `tests/test_components.py` for the suite's shape; the Action's first run f
 - README documents how to run the evals and what CI checks. `CLAUDE.md` lists the eval command.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:56
+
+Eval suite, run from a clone with `claude plugin eval . --trust-plugin --runs 1 --no-publish --scaffold --json` (Claude Code 2.1.304). Two findings on the way: the runner refuses `--allow-tools Bash` on this machine because of credential files it cannot sandbox, so every case was reshaped to need no Bash grant (the verify case gets its project from a `scaffold.sh` and the judge accepts an agent that cannot run commands but refuses to call the work done without the output); and `regex` graders are JavaScript regexes, so case-insensitivity is `flags: i`, not `(?i)`, which threw "Invalid regular expression". After both fixes, with the plugin and without it (the baseline arm):
+
+```
+case                          with   without   delta
+grilling-numbered-round       1.00   0.00      +1.00   (grilling loaded; judge: numbered, recommended answers)
+guide-routes-to-setup         1.00   0.50      +0.50   (names /toolkit:setup; wrote nothing)
+verify-before-claiming-done   1.00   0.33      +0.67   (verify loaded; judge PASS; no bare done claim)
+```
+
+Cost of the full run: about 0.56 USD for the first three-case run, 0.16 USD for the one-case rerun. All three cases pass with the plugin, none pass without it.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+.................................................
+----------------------------------------------------------------------
+Ran 49 tests in 1.367s
+
+OK
+```
+
+Before `evals/` existed, `tests.test_components.EvalSuiteRules` failed with `AssertionError: 0 not greater than or equal to 3 : evals/ must hold at least three cases`.
+
+GitHub Action: see the next evidence block, recorded after the workflow's first run.

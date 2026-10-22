@@ -17,6 +17,7 @@ This repo is the `toolkit` Claude Code plugin, served from its own marketplace `
 
 - Test: `python3 -m unittest discover -s tests -v`
 - Validate the plugin: `~/.nvm/versions/node/v25.3.0/bin/claude plugin validate .` (the `claude` on PATH is a work wrapper; use this binary)
+- Run the eval suite: `~/.nvm/versions/node/v25.3.0/bin/claude plugin eval . --runs 1 --no-publish --scaffold` from a clone, before a release. It costs tokens. Do not pass `--allow-tools Bash`: the runner refuses the Bash grant on this machine because of credential files it cannot sandbox.
 - Try it live: `~/.nvm/versions/node/v25.3.0/bin/claude --plugin-dir .` from any other repo
 
 ## Workflow for this repo

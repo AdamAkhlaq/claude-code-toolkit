@@ -111,10 +111,13 @@ where `$PLUGIN` is the installed plugin's root. From inside a skill or hook that
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -v      # hooks and graph tool
+python3 -m unittest discover -s tests -v      # hooks, graph tool, component and eval suite shape
 claude plugin validate .                       # manifests
 claude --plugin-dir /path/to/this/repo         # load the working tree in another project
+claude plugin eval . --runs 1 --no-publish --scaffold   # the eval suite under evals/, costs tokens
 ```
+
+The GitHub Action in `.github/workflows/validate.yml` runs the unit tests and `claude plugin validate .` on every pull request and push to main. The eval suite is not run in CI: it costs money and needs credentials, so run it by hand before a release. Each case under `evals/` is a `prompt.md` plus graders, the format `claude plugin eval` reads; `evals/results/` is ignored.
 
 Changes to behaviour go through the workflow itself: see `docs/changes/`. Main accepts pull requests only. Releases bump `.claude-plugin/plugin.json`, update `CHANGELOG.md`, and tag.
 

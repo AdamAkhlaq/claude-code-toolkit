@@ -5,7 +5,9 @@ blocked_by: [T2]
 files:
   [hooks/scripts/_common.py, hooks/scripts/red_guard.py, tests/test_hooks.py]
 proves: "in tests/test_hooks.py, with a linked worktree whose feedback command exits 1 and a main checkout whose feedback command exits 0, a `git commit` event with `cwd` set to the worktree exits 2, and so do `git -C <worktree> commit` and `cd <worktree> && git commit` from the main checkout"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0002-T3
 ---
 
 ## Context

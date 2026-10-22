@@ -10,7 +10,7 @@ files:
     docs/changes/0002-block-red-commits/intent.md,
   ]
 proves: "the plugin manifest says 0.5.0, CHANGELOG has a 0.5.0 section dated today that lists red-guard, and the whole test suite and `claude plugin validate .` pass"
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0002-T7
 ---
@@ -64,3 +64,16 @@ Ran 61 tests in 3.943s
 
 OK
 ```
+
+### Verifier 2026-10-22 19:49
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok, the proving check is the seam the plan names (manifest, CHANGELOG, suite, validate); no test file is expected for a release ticket. Read back: `plugin.json` version is `0.5.0`, `CHANGELOG.md` has `## [0.5.0] - 2026-10-22` under an empty `[Unreleased]` listing `red-guard`; the glossary terms, PHILOSOPHY links and `_common.commit_checkout` it claims exist on the branch
+3. proving test run: 0, `~/.nvm/versions/node/v25.3.0/bin/claude plugin validate .` printed "✔ Validation passed with warnings", the one warning being the expected root `CLAUDE.md` one
+4. feedback command: 0, `Ran 61 tests in 3.917s` / `OK`
+5. acceptance: 2 of 2 checked, none failed (validate and suite pass with only the root `CLAUDE.md` warning; `intent.md` has `status: shipped` and "Amendment 2026-10-22: shipped" naming v0.5.0)
+6. scope: ok, `.claude-plugin/plugin.json`, `CHANGELOG.md`, `README.md`, `intent.md` and the ticket file only
+7. tests intact: ok, no file under `tests/` changed

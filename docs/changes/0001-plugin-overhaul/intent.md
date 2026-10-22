@@ -1,7 +1,7 @@
 ---
 id: 0001
 slug: plugin-overhaul
-status: building
+status: shipped
 originator: Adam Akhlaq
 accepted_by: Adam Akhlaq
 created: 2026-10-21
@@ -59,3 +59,7 @@ Resolved: `claude plugin validate .` passes with one warning, that a `CLAUDE.md`
 ## Amendment 2026-10-22: building
 
 Phases 0 and 1 shipped as v0.1.0 and v0.2.0 outside the ticket graph, because the gate skills did not exist yet. Phase 2 is the first phase run through the workflow: four tickets under `tickets/`, executed `single` as the plan records, on the integration branch `change/0001-phase-2`.
+
+## Amendment 2026-10-22: shipped
+
+Four releases: v0.1.0 (phase 0, plumbing), v0.2.0 (phase 1, plan through build), v0.3.0 (phase 2, test and deploy) and v0.4.0 (phase 3, maintain and hardening). Phases 2 and 3 ran through the workflow as tickets T1 to T11 of this change. Every component in the spec's tables exists and every principle in `PHILOSOPHY.md` names a shipped enforcer. The open question on GitHub issues as a ticket mirror stays deferred; it is a new change if wanted.

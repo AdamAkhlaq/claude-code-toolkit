@@ -24,6 +24,8 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Proves**: a ticket's single proving test, written before the code and named in the ticket's frontmatter.
 - **Feedback command**: the one command that runs the project's checks and exits non-zero on failure. Its quoted output is the evidence that a ticket is done.
 - **Evidence**: the quoted output of the feedback command, recorded in the ticket, and the verifier's verdict beneath it.
+- **Eval case**: a directory under `evals/` holding a prompt that recreates a situation and graders that say whether the agent did the right thing. Pins a class of mistake, not an instance.
+- **Grader**: one check in an eval case: a pattern, a tool that was or was not used, a tool order, a file that exists, or a judge with a PASS/FAIL rubric. Deterministic graders come first.
 - **Executor**: whoever works a ticket: a single agent in the session, a subagent, an agent team member, or a headless run. Chosen per change in the plan, overridable per ticket.
 - **Integration branch**: the branch a change's tickets merge into, named `change/<NNNN>-<slug>`, after the verifier passes each ticket.
 - **Ticket branch**: the branch one ticket is worked on, `ticket/<NNNN>-<Tn>`, created from the integration branch and merged back after verification. Checked out in its own worktree when executors run concurrently.
@@ -31,8 +33,10 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Two-way door**: a change that can be reverted cheaply. Runs unattended.
 - **Review pass**: one section of `REVIEW.md`, run by one `reviewer` agent in its own context over the change's diff. The default passes are bugs and logic, security, and compliance with the spec and plan.
 - **Waiver**: the code owner's named decision, recorded in `review.md`, not to fix an Important finding, with the reason in their words.
+- **Incident**: something that affected users or broke production. Recorded blamelessly under `docs/incidents/` with a timeline, a root cause and follow-ups.
+- **Follow-up**: an item an incident record leaves behind, in one of three forms: an intent (work), a rule (a `CLAUDE.md` line or a policy skill), or an eval case.
 - **Important**: a review finding that breaks behaviour, leaks data, breaches policy or diverges from the spec. Must be fixed or waived before merge.
 - **Nit**: any other review finding. Capped at five per review.
-- **Policy skill**: a skill that encodes one rule the project must apply consistently, such as a security or compliance standard.
+- **Policy skill**: a model-invoked skill under the repo's `.claude/skills/` that encodes one rule the project must apply consistently, such as a security or compliance standard. Written by `policy-skill`, read by `spec` when flagging conflicts, and proven by two trigger tests under `evals/`.
 - **User-invoked**: a skill only the human can start, by typing `/toolkit:<name>`. It orchestrates.
 - **Model-invoked**: a skill Claude can reach for on its own when the task fits. It holds reusable discipline.

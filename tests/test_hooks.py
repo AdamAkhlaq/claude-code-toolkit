@@ -133,6 +133,18 @@ class DeployGateTests(HookCase):
         code, _, _ = run_hook("deploy_gate.py", bash_event("terraform apply"), self.root)
         self.assertEqual(code, 0)
 
+    def test_block_names_both_authorisation_routes(self):
+        """The README documents two routes; the block message must name both so a blocked agent can relay them."""
+        self.configure(gatedCommands=["^git tag "])
+        code, _, err = run_hook("deploy_gate.py", bash_event("git tag v1.0.0"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("RELEASE_AUTHORIZED=1", err)
+        self.assertIn(".claude/.release-authorized", err)
+        self.assertIn("one-way door", err)
+        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        self.assertIn("`RELEASE_AUTHORIZED`", readme)
+        self.assertIn("`.claude/.release-authorized`", readme)
+
     def test_non_matching_and_invalid_patterns(self):
         self.configure(gatedCommands=["[unclosed", "terraform apply"])
         code, _, err = run_hook("deploy_gate.py", bash_event("terraform plan"), self.root)

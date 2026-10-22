@@ -141,6 +141,34 @@ class HookRules(unittest.TestCase):
         self.assertEqual(documented, scripts, "README hook table must list every hook script")
 
 
+GRADER_TYPES = {"regex", "tool_used", "tool_order", "file_exists", "llm", "baseline"}
+
+
+class EvalSuiteRules(unittest.TestCase):
+    def cases(self):
+        evals = REPO / "evals"
+        return sorted(p for p in evals.iterdir() if p.is_dir() and p.name != "results") if evals.is_dir() else []
+
+    def test_suite_has_at_least_three_cases(self):
+        self.assertGreaterEqual(len(self.cases()), 3, "evals/ must hold at least three cases")
+
+    def test_every_case_has_a_named_prompt_and_a_known_grader(self):
+        for case in self.cases():
+            prompt = case / "prompt.md"
+            self.assertTrue(prompt.is_file(), f"evals/{case.name}: prompt.md is missing")
+            meta, body = split(prompt)
+            self.assertEqual(meta.get("name"), case.name, f"evals/{case.name}: prompt name must match the folder")
+            self.assertTrue(meta.get("description"), f"evals/{case.name}: description is required")
+            self.assertTrue(body.strip(), f"evals/{case.name}: the prompt body is empty")
+            graders = sorted((case / "graders").glob("*.md"))
+            self.assertTrue(graders, f"evals/{case.name}: at least one grader is required")
+            for grader in graders:
+                gmeta, gbody = split(grader)
+                self.assertIn(gmeta.get("type"), GRADER_TYPES, f"evals/{case.name}/graders/{grader.name}: unknown type {gmeta.get('type')!r}")
+                self.assertTrue(gbody.strip(), f"evals/{case.name}/graders/{grader.name}: say what PASS and FAIL look like")
+            self.assertTrue(any(split(g)[0].get("type") != "llm" for g in graders), f"evals/{case.name}: needs a deterministic grader, not only a judge")
+
+
 class PhilosophyRules(unittest.TestCase):
     def enforcers(self):
         text = (REPO / "PHILOSOPHY.md").read_text(encoding="utf-8")

@@ -11,7 +11,9 @@ files:
     docs/changes/0001-plugin-overhaul/intent.md,
   ]
 proves: "the plugin manifest says 0.4.0, CHANGELOG has a 0.4.0 section with today's date, no `planned` remains in the README, and the whole test suite and plugin validation pass"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0001-T11
 ---
 
 ## Context

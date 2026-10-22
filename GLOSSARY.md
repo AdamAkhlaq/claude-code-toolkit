@@ -37,6 +37,6 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Follow-up**: an item an incident record leaves behind, in one of three forms: an intent (work), a rule (a `CLAUDE.md` line or a policy skill), or an eval case.
 - **Important**: a review finding that breaks behaviour, leaks data, breaches policy or diverges from the spec. Must be fixed or waived before merge.
 - **Nit**: any other review finding. Capped at five per review.
-- **Policy skill**: a skill that encodes one rule the project must apply consistently, such as a security or compliance standard.
+- **Policy skill**: a model-invoked skill under the repo's `.claude/skills/` that encodes one rule the project must apply consistently, such as a security or compliance standard. Written by `policy-skill`, read by `spec` when flagging conflicts, and proven by two trigger tests under `evals/`.
 - **User-invoked**: a skill only the human can start, by typing `/toolkit:<name>`. It orchestrates.
 - **Model-invoked**: a skill Claude can reach for on its own when the task fits. It holds reusable discipline.

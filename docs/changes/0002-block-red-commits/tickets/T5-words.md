@@ -11,7 +11,9 @@ files:
     tests/test_components.py,
   ]
 proves: "in tests/test_components.py, a new test asserts every hook script under hooks/scripts/ is linked in the Enforced by column of PHILOSOPHY.md's At a glance table, and it passes"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0002-T5
 ---
 
 ## Context

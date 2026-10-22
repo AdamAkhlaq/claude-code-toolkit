@@ -4,7 +4,7 @@ title: Exercise the deploy gate end to end
 blocked_by: [T8]
 files: [README.md, tests/test_hooks.py]
 proves: "with the plugin loaded in a headless session in this repo, `git tag` is blocked by deploy-gate and the block names the authorisation route, and the same command passes with RELEASE_AUTHORIZED=1; the quoted transcripts are the evidence"
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0001-T9
 ---
@@ -58,3 +58,17 @@ Ran 47 tests in 1.384s
 
 OK
 ```
+
+### Verifier 2026-10-22 17:52
+
+Verdict: pass
+
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. Reproduced both transcripts myself in two fresh clones at `c2d4980` with the plugin loaded from the clone and only `Bash(git tag *)` allowed, prompt "Run exactly this shell command and report its result verbatim, do not try any alternative: git tag v9.9.9-verify-check". Without authorisation the session reported the hook output verbatim: "PreToolUse:Bash hook error: [python3 ".../hooks/scripts/deploy_gate.py"]: Blocked: 'git tag v9.9.9-verify-check' matches gated command pattern '^git tag ' in .claude/toolkit.json. This is a one-way door and needs release authorisation from a human. After approving, they export RELEASE_AUTHORIZED=1 for the session or create .claude/.release-authorized. Prepare everything up to this step and stop." and `git tag -l 'v9.9.9*'` printed nothing. With `RELEASE_AUTHORIZED=1` the session reported "I ran `git tag v9.9.9-verify-check` and it printed no output, which means it succeeded." and `git tag -l 'v9.9.9*'` printed `v9.9.9-verify-check`; the tag was deleted from the clone and the real checkout has no such tag. The unit test `test_block_names_both_authorisation_routes` is added on this branch, asserts exit 2 and both route names in the block message, and would fail if either route were dropped from the wording.
+3. proving test run: 0, `Ran 1 test in 0.031s OK` (`python3 -m unittest tests.test_hooks.DeployGateTests.test_block_names_both_authorisation_routes`)
+4. feedback command: 0, `Ran 47 tests in 1.440s OK`
+5. acceptance: 3 of 3 checked, none failed. Transcripts quoted in Evidence, one blocked and one authorised, and reproduced above. README hook table row and new paragraph name `RELEASE_AUTHORIZED` and `.claude/.release-authorized`, the same two routes `deploy_gate.py` names in its block message. Test suite passes per check 4.
+6. scope: ok (`README.md`, `tests/test_hooks.py`, plus the ticket file)
+7. tests intact: ok (`tests/test_hooks.py` shows 12 added lines, 0 deleted, no skip or expected-failure markers)

@@ -4,7 +4,7 @@ title: A feedback command that cannot finish is red, and faults never block othe
 blocked_by: [T3]
 files: [hooks/scripts/red_guard.py, tests/test_hooks.py]
 proves: "in tests/test_hooks.py, red_guard.run_feedback(command, cwd, limit=1) on a shell command that starts a child sleeping 30 seconds returns within 5 seconds reporting it timed out, and the child process is gone"
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0002-T4
 ---
@@ -46,3 +46,16 @@ Ran 59 tests in 3.931s
 
 OK
 ```
+
+### Verifier 2026-10-22 19:42
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok, `test_feedback_past_the_limit_is_stopped_with_its_children` is new on this branch, imports `red_guard` directly (the plan's seam) and probes the backgrounded child with `os.kill(pid, 0)`; on a scratch copy with `start_new_session` removed and `killpg` replaced by `process.kill()` it fails with `AssertionError: 6.027073208002548 not less than 5`, and the fault test fails against the integration branch's `red_guard.py` with `AssertionError: 1 != 2`
+3. proving test run: 0, `Ran 2 tests in 1.142s OK` (proving test and fault test)
+4. feedback command: 0, `Ran 59 tests in 3.921s OK`
+5. acceptance: 4 of 4 checked, none failed (proving test passes; `timeout_reason` asserted to contain "570 seconds" through the imported module; `feedbackCommand: 123` on a commit exits 2 with `Commit stopped: red-guard could not check the commit (TypeError: 'int' object is not iterable)...` and garbage stdin exits 0 with no output, run by hand and by the test; suite 3.9s against 2.7s for the base hook tests alone, the extra second being the 1-second limit test)
+6. scope: ok
+7. tests intact: ok, the test diff only adds two tests and an import

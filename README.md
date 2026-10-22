@@ -34,7 +34,7 @@ Each stage commits an artifact under `docs/changes/<NNNN>-<slug>/`. The build st
 
 ## Status
 
-This is version 0.2.0: plumbing plus the four gates and the build loop. A change can go from an idea to merged, verified tickets. Review, bug fixing and the maintenance skills land in the next releases, in this order.
+This is version 0.3.0: the gates, the build loop, bug fixing, review and the pull request sweep. A change can go from an idea to a green pull request. The maintenance skills land in 0.4.0.
 
 | Skill          | Invocation | Status        | What it does                                                           |
 | -------------- | ---------- | ------------- | ---------------------------------------------------------------------- |

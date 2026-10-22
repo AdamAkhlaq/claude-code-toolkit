@@ -28,3 +28,18 @@ Seam: `python3 -m unittest discover -s tests` and `claude plugin validate .`.
 - No `planned 0.3.0` remains anywhere in the README.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:37
+
+Command: a release check (manifest says 0.3.0, CHANGELOG has a dated 0.3.0 section, no `planned 0.3.0` in the README, the test suite is OK, `claude plugin validate .` passes) followed by `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+release-check: ok
+Ran 46 tests in 1.470s
+
+OK
+```
+
+Before the bump the same check exited 1 on the manifest version.

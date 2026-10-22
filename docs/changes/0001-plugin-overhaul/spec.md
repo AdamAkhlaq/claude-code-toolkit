@@ -126,3 +126,10 @@ Hook scripts are `hooks/scripts/<name>.py`, not `.sh`, and share `hooks/scripts/
 - A one-way-door decision in a plan is recorded as an ADR from `templates/adr.md`, which joins the template list.
 - The invocation rules (user-invoked skills carry `disable-model-invocation: true`, no skill names a user-invoked skill, every agent has a tool allowlist) and the completeness of the README and `PHILOSOPHY.md` tables are checked by `tests/test_components.py`, resolving the open question on whether composition over configuration gets a script.
 - In `single` execution the `implement` skill follows the executor steps in `agents/implementer.md` itself, in the session. This is the one cross-folder file reference in the plugin, kept so the executor contract exists in exactly one place.
+
+## Amendment 2026-10-22: phase 2 conventions
+
+- A bug fix is a change. `fix-bug` allocates a change folder with an `intent.md` whose origin is the report and a one-ticket graph whose `proves` is the regression test; a spec and a plan are not required for it.
+- `review.md` joins the change folder's artifacts, written by `review`, with every Important finding as a checkbox closed by a fix commit hash or a named waiver. Findings are also posted to the pull request as inline comments so that `pr-sweep` can resolve them.
+- `pr-sweep` is the one skill that pushes, with the user's approval per push and never by force. The structural test now states that rule instead of the earlier never-push heuristic.
+- Phase 2 was executed through the workflow: tickets T1 to T4 under this change, `single` execution on `change/0001-phase-2`, one fresh-context verifier per ticket. T3 was reopened twice by verifiers, both times correctly, and fixed in the session rather than stopping the run, since the originator was the executor.

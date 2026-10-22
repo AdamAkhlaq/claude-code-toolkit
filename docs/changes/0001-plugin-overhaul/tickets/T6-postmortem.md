@@ -13,7 +13,7 @@ files:
     templates/eval-case.md,
   ]
 proves: "tests/test_components.py passes with the README skill table listing postmortem as shipped in 0.4.0"
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0001-T6
 ---
@@ -50,3 +50,19 @@ OK
 ```
 
 Before `skills/postmortem/SKILL.md` existed, with the README row at 0.4.0, `tests.test_components` failed with `AssertionError: 'postmortem' not found in [...]`.
+
+### Verifier 2026-10-22 18:20
+
+Verdict: pass
+
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. `tests/test_components.py` existed on the integration branch and is unchanged here; flipping the README row to shipped makes `test_invocation_matches_readme` require `skills/postmortem/SKILL.md` and `test_shipped_components_are_linked_not_just_named` require the PHILOSOPHY links. In a scratch copy of the branch without `skills/postmortem/`, the module fails with 2 failures (`README lists postmortem as shipped but skills/postmortem/SKILL.md is missing`, `PHILOSOPHY.md links to missing skills/postmortem/SKILL.md`).
+3. proving test run: 0, `Ran 10 tests in 0.013s OK` (`python3 -m unittest tests.test_components -v`)
+4. feedback command: 0, `Ran 46 tests in 1.301s OK` (`python3 -m unittest discover -s tests`)
+5. acceptance: 4 of 4 checked, none failed. Proving test passes (check 3). `skills/postmortem/SKILL.md` has `disable-model-invocation: true`, an `argument-hint` and reads `$ARGUMENTS` as the incident description, link or change id. `templates/incident.md` frontmatter has `date`, `slug`, `severity`, `status`, `owner` (plus `detected`, `resolved`) and Summary, Impact, Timeline, Root cause, Contributing factors, What went well and Follow-ups as HTML comments. PHILOSOPHY rows "Mistakes become memory" and "The loop closes" both link `./skills/postmortem/SKILL.md`; `GLOSSARY.md` defines Incident and Follow-up; `skills/guide/SKILL.md` routes "Something affected users or broke production and is over or mitigated" to `/toolkit:postmortem`.
+6. scope: ok. Changed on the branch: GLOSSARY.md, PHILOSOPHY.md, README.md, skills/guide/SKILL.md, skills/postmortem/SKILL.md, templates/eval-case.md, templates/incident.md, plus the ticket file. `toolkit-graph validate` reports `0001-plugin-overhaul: ok (11 tickets)` with `templates/eval-case.md` in this ticket's list.
+7. tests intact: ok, `git diff change/0001-phase-3...HEAD -- tests/` is empty.
+
+Also run: `claude plugin validate .` passes (one pre-existing warning about the root CLAUDE.md); `prettier --check` is clean on the three new files. Observation for T7: prettier reformats the YAML placeholders inside the fenced blocks of `templates/eval-case.md` to `{ { CASE_NAME } }`, which does not match the `{{...}}` style used elsewhere in the template.

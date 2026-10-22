@@ -2,9 +2,15 @@
 id: T3
 title: Add the pr-sweep skill
 blocked_by: [T2]
-files: [skills/pr-sweep/SKILL.md, README.md, skills/guide/SKILL.md]
+files:
+  [
+    skills/pr-sweep/SKILL.md,
+    README.md,
+    skills/guide/SKILL.md,
+    tests/test_components.py,
+  ]
 proves: "tests/test_components.py passes with the README listing pr-sweep as shipped in 0.3.0"
-status: reopened
+status: in-progress
 executed_by: single
 branch: ticket/0001-T3
 ---
@@ -86,3 +92,19 @@ Checks:
 7. tests intact: ok. The push rule was changed, not dropped, and the reason is recorded in the 17:32 evidence: the spec has `pr-sweep` push with the user's go-ahead, which the old "never push" assertion forbids. Checked every user-invoked skill against both regexes: the nine skills the old test covered still hit the "never push" branch, `fix-bug` is newly covered, and only `pr-sweep` takes the approval-plus-never-force-push branch.
 
 Reopen reason: add `tests/test_components.py` to the ticket's `files` list, as the 17:32 evidence already claims was done, and re-run `bin/toolkit-graph validate`.
+
+### Evidence 2026-10-22 17:35 (after second reopen)
+
+Added `tests/test_components.py` to `files`; the earlier edit targeted prettier's wrapped list form and this list was short enough to stay on one line. `toolkit-graph validate` prints ok.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+..............................................
+----------------------------------------------------------------------
+Ran 46 tests in 1.295s
+
+OK
+```

@@ -5,7 +5,7 @@ blocked_by: []
 files:
   [hooks/scripts/red_guard.py, hooks/hooks.json, README.md, tests/test_hooks.py]
 proves: "in tests/test_hooks.py, a `git commit` event in a repo with a pending source change and a feedback command that exits 1 makes red_guard.py exit 2 with a message naming the command, its exit code and its output, and the same event with a feedback command that exits 0 makes it exit 0 with no output"
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0002-T1
 ---
@@ -53,3 +53,16 @@ Ran 52 tests in 1.700s
 
 OK
 ```
+
+### Verifier 2026-10-22 19:35
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok (`RedGuardTests.test_blocks_commit_on_red_and_passes_on_green`, added on this branch, drives `red_guard.py` as a subprocess through `run_hook`/`HookCase`, asserts exit 2 with the command, `Exit code: 1` and `boom` in stderr on red, and `(0, "", "")` on green; it fails if the block is removed)
+3. proving test run: 0, `Ran 1 test in 0.139s OK`
+4. feedback command: 0, `Ran 52 tests in 1.669s OK`
+5. acceptance: 5 of 5 checked, none failed (proving test passes; `test_non_commits_and_unconfigured_repos_never_run_the_feedback_command` covers no config, empty `feedbackCommand` and a non-commit with a marker command that is not written; `test_quotes_only_the_last_forty_lines` keeps lines 60 to 99 of 100 and drops 59; `hooks/hooks.json` diff shows the entry after `secret_guard.py` with `"if": "Bash(git *)"`, `"timeout": 600`, `"onFailure": "block"` and the README diff adds the `red-guard` row with `feedbackCommand`, `testGlobs`; full suite passes)
+6. scope: ok
+7. tests intact: ok

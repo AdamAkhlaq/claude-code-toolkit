@@ -80,6 +80,30 @@ def _flow_list(raw: str):
     return [_scalar(item) for item in items if item.strip()]
 
 
+def _join_wrapped_flow_lists(lines):
+    """Fold a flow list that a formatter wrapped over several lines back onto one line.
+
+    Prettier writes `files:` followed by `[`, one item per line and a closing `]`.
+    """
+    joined, buffer = [], None
+    for line in lines:
+        if buffer is not None:
+            buffer += " " + line.strip()
+        elif line.strip().startswith("[") and joined and re.match(r"^[A-Za-z_][\w-]*:\s*$", joined[-1]):
+            buffer = joined.pop() + " " + line.strip()
+        elif line.count("[") > line.count("]"):
+            buffer = line
+        else:
+            joined.append(line)
+            continue
+        if buffer.count("[") <= buffer.count("]"):
+            joined.append(buffer)
+            buffer = None
+    if buffer is not None:
+        raise GraphError("unterminated flow list (missing ])")
+    return joined
+
+
 def parse_frontmatter(text: str) -> dict:
     """A deliberately small YAML subset: scalars, flow lists, block lists."""
     if not text.startswith("---\n"):
@@ -88,7 +112,7 @@ def parse_frontmatter(text: str) -> dict:
     if end == -1:
         raise GraphError("unterminated frontmatter (no closing ---)")
     data, key = {}, None
-    for line in text[4:end].split("\n"):
+    for line in _join_wrapped_flow_lists(text[4:end].split("\n")):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         pair = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", line)

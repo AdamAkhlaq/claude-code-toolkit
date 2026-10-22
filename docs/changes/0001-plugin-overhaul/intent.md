@@ -1,7 +1,7 @@
 ---
 id: 0001
 slug: plugin-overhaul
-status: accepted
+status: building
 originator: Adam Akhlaq
 accepted_by: Adam Akhlaq
 created: 2026-10-21
@@ -55,3 +55,7 @@ A single Claude Code plugin, `toolkit`, served from this repo's own marketplace,
 ## Amendment 2026-10-21: validate and the root CLAUDE.md
 
 Resolved: `claude plugin validate .` passes with one warning, that a `CLAUDE.md` at the plugin root is not loaded into consumers' sessions. `--strict` fails on it. The maintainer `CLAUDE.md` stays, and validation runs without `--strict`.
+
+## Amendment 2026-10-22: building
+
+Phases 0 and 1 shipped as v0.1.0 and v0.2.0 outside the ticket graph, because the gate skills did not exist yet. Phase 2 is the first phase run through the workflow: four tickets under `tickets/`, executed `single` as the plan records, on the integration branch `change/0001-phase-2`.

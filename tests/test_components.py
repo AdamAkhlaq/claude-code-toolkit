@@ -75,7 +75,7 @@ class SkillRules(unittest.TestCase):
                 self.assertEqual(flag, "false", f"skills/{name}: model-invoked skills must stay model-invocable")
         for name, row in listed.items():
             if "planned" not in row[2]:
-                self.assertIn(name, skills(), f"README lists {name} as shipped but skills/{name}/SKILL.md is missing")
+                self.assertIn(name, sorted(skills()), f"README lists {name} as shipped but skills/{name}/SKILL.md is missing")
 
     def test_no_component_calls_a_user_invoked_skill(self):
         all_skills = skills()
@@ -91,11 +91,16 @@ class SkillRules(unittest.TestCase):
             for ref in re.findall(r"/toolkit:([a-z-]+)", body):
                 self.assertNotIn(ref, model_invoked, f"{source} tells the user to type /toolkit:{ref}, a model-invoked skill")
 
-    def test_user_invoked_skills_never_push(self):
+    def test_pushing_is_the_users_decision(self):
+        """A user-invoked skill either never pushes, or pushes only with approval and never by force."""
         for name, (meta, body) in skills().items():
-            commits = re.search(r"(?i)commit only when|git merge", body)
-            if meta.get("disable-model-invocation", "").lower() == "true" and commits:
-                self.assertRegex(body, r"[Nn]ever push", f"skills/{name}: a skill that commits must say it never pushes")
+            if meta.get("disable-model-invocation", "").lower() != "true":
+                continue
+            if re.search(r"git push|[Pp]ush with", body):
+                self.assertRegex(body, r"[Pp]ush, with approval|with the user's go-ahead", f"skills/{name}: pushing needs the user's approval")
+                self.assertRegex(body, r"[Nn]ever force-push", f"skills/{name}: a skill that pushes must never force-push")
+            elif re.search(r"(?i)\bcommit\b", body) and not re.search(r"[Nn]ever commit\.", body):
+                self.assertRegex(body, r"[Nn]ever push", f"skills/{name}: a skill that commits but does not push must say it never pushes")
 
 
 class AgentRules(unittest.TestCase):
@@ -108,9 +113,10 @@ class AgentRules(unittest.TestCase):
             self.assertNotIn("*", tools, f"agents/{name}: an allowlist names tools, it does not grant all of them")
 
     def test_readers_cannot_write(self):
-        meta, _ = agents()["researcher"]
-        for tool in ("Edit", "Write", "NotebookEdit", "Agent"):
-            self.assertNotIn(tool, meta["tools"], f"agents/researcher: must not carry {tool}")
+        for name in ("researcher", "reviewer"):
+            meta, _ = agents()[name]
+            for tool in ("Edit", "Write", "NotebookEdit", "Agent"):
+                self.assertNotIn(tool, meta["tools"], f"agents/{name}: must not carry {tool}")
 
     def test_readme_names_every_agent(self):
         readme = (REPO / "README.md").read_text(encoding="utf-8")

@@ -22,6 +22,10 @@ Read `spec.md` and `plan.md` for this change. Does the diff implement every requ
 
 **Nit**: everything else. At most five nits per review, chosen by value. Skip anything a formatter, linter or CI check already enforces, and skip generated paths.
 
+## Finding format
+
+Each reviewer returns findings as one line each: `[Important|Nit] <path>:<line> <what is wrong>. <why it matters>. Fix: <the smallest change that resolves it>.` A finding without a path and line is not a finding. The `review` skill merges the passes into `docs/changes/<change>/review.md`, where every Important finding is a checkbox closed by a fix commit or a named waiver.
+
 ## Not reviewed
 
 - Generated files and vendored code.

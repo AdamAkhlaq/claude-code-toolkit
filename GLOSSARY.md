@@ -17,6 +17,9 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Ticket graph**: the tickets of a change and their `blocked_by` edges. Validated for cycles and file overlap before any ticket runs.
 - **Frontier**: the tickets that can start now: not done, and every ticket they are blocked by is done.
 - **Blocked by**: the dependency edge. A ticket lists the ids it waits for, never the ids that wait for it.
+- **Reproduction**: the bug observed the way it was reported, same route and inputs, quoted. Required before any fix.
+- **Regression test**: the fastest test at the nearest seam that fails for the same reason as the reproduction. Committed before the fix, kept forever.
+- **Test lock**: the marker `.claude/.tests-locked`, created after the regression test is committed, under which the `lock-tests` hook blocks every edit to a test file.
 - **Seam**: a public boundary where behaviour can be observed without reaching inside. Tests are written at seams the plan agreed, nowhere else.
 - **Proves**: a ticket's single proving test, written before the code and named in the ticket's frontmatter.
 - **Feedback command**: the one command that runs the project's checks and exits non-zero on failure. Its quoted output is the evidence that a ticket is done.
@@ -26,6 +29,8 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Ticket branch**: the branch one ticket is worked on, `ticket/<NNNN>-<Tn>`, created from the integration branch and merged back after verification. Checked out in its own worktree when executors run concurrently.
 - **One-way door**: a change that cannot be walked back, such as a migration or a production deploy. Runs with a human watching and behind the deploy gate.
 - **Two-way door**: a change that can be reverted cheaply. Runs unattended.
+- **Review pass**: one section of `REVIEW.md`, run by one `reviewer` agent in its own context over the change's diff. The default passes are bugs and logic, security, and compliance with the spec and plan.
+- **Waiver**: the code owner's named decision, recorded in `review.md`, not to fix an Important finding, with the reason in their words.
 - **Important**: a review finding that breaks behaviour, leaks data, breaches policy or diverges from the spec. Must be fixed or waived before merge.
 - **Nit**: any other review finding. Capped at five per review.
 - **Policy skill**: a skill that encodes one rule the project must apply consistently, such as a security or compliance standard.

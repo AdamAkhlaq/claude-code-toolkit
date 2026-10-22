@@ -50,7 +50,7 @@ This is version 0.3.0: the gates, the build loop, bug fixing, review and the pul
 | `pr-sweep`     | user       | 0.3.0         | Resolves comments and failing checks until green                       |
 | `diagnose`     | user       | 0.4.0         | Read-only diagnosis of a finding, written as a new intent              |
 | `postmortem`   | user       | 0.4.0         | Incident record, follow-up intent, eval case                           |
-| `eval-case`    | user       | planned 0.4.0 | Turns a task or incident into an eval                                  |
+| `eval-case`    | user       | 0.4.0         | Turns a task or incident into an eval                                  |
 | `policy-skill` | user       | planned 0.4.0 | Encodes one policy as a skill                                          |
 | `grilling`     | model      | 0.2.0         | Numbered question rounds with recommended answers                      |
 | `glossary`     | model      | 0.2.0         | Coins and challenges terms in `GLOSSARY.md`                            |

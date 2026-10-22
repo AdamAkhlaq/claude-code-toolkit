@@ -33,3 +33,21 @@ Seam: `tests/test_components.py`.
 - PHILOSOPHY "Mistakes become memory" links the skill. `GLOSSARY.md` defines eval case and grader. The guide routes "make sure this never happens again" to it.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:47
+
+The T6 verifier noted that prettier rewrites unquoted `{{X}}` placeholders inside the template's fenced YAML to `{ { X } }`; the template now uses `<PLACEHOLDER>`, which prettier leaves alone.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+..............................................
+----------------------------------------------------------------------
+Ran 46 tests in 1.331s
+
+OK
+```
+
+Before `skills/eval-case/SKILL.md` existed, with the README row at 0.4.0, `tests.test_components` failed with `AssertionError: 'eval-case' not found in [...]`.

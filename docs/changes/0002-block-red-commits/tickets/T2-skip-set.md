@@ -4,7 +4,9 @@ title: Commits that change only workflow documents and tests skip the check
 blocked_by: [T1]
 files: [hooks/scripts/red_guard.py, tests/test_hooks.py]
 proves: "in tests/test_hooks.py, with a feedback command that exits 1, a `git commit` whose pending changes are only a file under docs/, GLOSSARY.md and a file matching testGlobs exits 0 without running the feedback command, and adding one untracked source file makes it exit 2"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0002-T2
 ---
 
 ## Context

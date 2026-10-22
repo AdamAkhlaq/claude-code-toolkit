@@ -31,6 +31,7 @@ Match the user's words, or the state when they said nothing, to the first row th
 | A plan with `status: accepted` and no tickets                              | `/toolkit:tickets <change>`                                       | `tickets/*.md`: a validated graph of tracer bullets                                                |
 | Tickets exist and the frontier is not empty                                | `/toolkit:implement <change>`                                     | verified ticket branches merged into the integration branch                                        |
 | Every ticket is done                                                       | `/toolkit:review <change>`                                        | `review.md`: three passes merged, Important findings fixed or waived, comments on the pull request |
+| A pull request with unresolved comments or red checks                      | `/toolkit:pr-sweep <n>`                                           | every thread answered or fixed, every check green                                                  |
 | The user wants to know what a term means                                   | point at `GLOSSARY.md`, no skill needed                           |                                                                                                    |
 | The user wants a rule remembered                                           | say it will go in `CLAUDE.md`; the `claude-md` discipline applies | a line in `CLAUDE.md`                                                                              |
 

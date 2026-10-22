@@ -22,3 +22,19 @@ Seam: `tests/test_components.py`.
 - The guide routes an open pull request with comments or red checks to `pr-sweep`.
 
 ## Evidence
+
+### Evidence 2026-10-22 17:28
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+..............................................
+----------------------------------------------------------------------
+Ran 46 tests in 1.323s
+
+OK
+```
+
+Before `skills/pr-sweep/SKILL.md` existed, with the README row at 0.3.0, `tests.test_components` failed with `AssertionError: 'pr-sweep' not found in [...]`.

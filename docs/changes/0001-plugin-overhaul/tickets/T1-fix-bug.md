@@ -11,7 +11,9 @@ files:
     skills/guide/SKILL.md,
   ]
 proves: "tests/test_components.py passes with the README skill table listing fix-bug as shipped in 0.3.0"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0001-T1
 ---
 
 ## Context

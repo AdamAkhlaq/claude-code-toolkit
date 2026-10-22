@@ -4,7 +4,7 @@ title: Add the pr-sweep skill
 blocked_by: [T2]
 files: [skills/pr-sweep/SKILL.md, README.md, skills/guide/SKILL.md]
 proves: "tests/test_components.py passes with the README listing pr-sweep as shipped in 0.3.0"
-status: reopened
+status: in-progress
 executed_by: single
 branch: ticket/0001-T3
 ---
@@ -54,3 +54,20 @@ Checks:
 7. tests intact: ok, no diff under tests/
 
 Reopen reason: make the skill stop on a merge conflict with the base branch, as the acceptance list requires, rather than only on a diverged push.
+
+### Evidence 2026-10-22 17:31 (after reopen)
+
+Added the merge-conflict stop condition to the preconditions and the rules of `skills/pr-sweep/SKILL.md`.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 1
+
+```
+AssertionError: Regex didn't match: '[Nn]ever push' not found in "\n# PR sweep\n\nA pull request is done when every review thread is resolved and every check is green. This skill works through both until the list is empty or something needs a human.\n\nThe pull request: $ARGUMENTS\n\nIf the argument is empty, use `gh pr view --json number` on the current branch.\n\n## Steps\n\n1. **Preconditions.** `.claude/toolkit.json` exists with a `feedbackCommand`. `gh auth status` succeeds. The pull request's head branch is checked out and the tree is clean. Note the change id from the branch name or the commit trailers. Check `gh pr view <n> --json mergeable`: a merge conflict with the base branch is a stop condition. Show the conflicting files from `git merge-tree` and hand the resolution to the user; resolving someone's conflict silently rewrites their intent.\n\n2. **Read the whole list first.** Collect, in one pass:\n   - Unresolved review threads: `gh api graphql` on `pullRequest.reviewThreads` with `isResolved`, `path`, `line`, and each comment's author and body.\n   - Failing or pending checks: `gh pr checks <n>` and, for each failure, the log through `gh run view <id> --log-failed`.\n   - The review record, `docs/changes/<change>/review.md`, when it exists, so the sweep closes its boxes too.\n     Show the user the list, grouped as comments and checks, before changing anything. Number the items; the numbers are how you refer to them from here.\n\n3. **Sort each item.** Every item is one of:\n   - **Fix.** A concrete request or a real failure. Make the change.\n   - **Answer.** A question, or a request that is wrong given the spec or the plan. Reply with the reason, citing the artifact, and resolve the thread only when the author agrees or the user says to.\n   - **Escalate.** A request that changes the design, the scope or a one-way-door decision. It is not fixed in a comment thread: it becomes a dated amendment to `spec.md` or `plan.md`, through the `toolkit:grilling` skill with the user, and possibly a new ticket. Say which, and stop the sweep on that item.\n     Where the sorting is a judgment call, ask the user in one numbered round.\n\n4. **Work the fixes, smallest first.** For each:\n   - A comment: make the change on its line and nowhere else. Verify with the `toolkit:verify` skill. Commit as `fix(<scope>): <what the comment asked>` with the trailer `Change: <NNNN>` and the thread's URL in the body.\n   - A failing check: reproduce the failure locally with the feedback command, or the check's own command when the feedback command does not cover it. Fix it. Verify. Commit as `fix(ci): <what failed>`. If the same check fails again after your fix, stop and report; do not loop on a check that may be flaky or environmental. Say which it looks like and why.\n     Do not fold several items into one commit; the thread's author wants to see their change.\n\n5. **Push, with approval.** Show the commits and ask for go. Push with `git push`. Never force-push; if the branch has diverged, say so and stop. After the push, reply on each fixed thread with the commit hash and resolve it (`resolveReviewThread` mutation). Tick the matching boxes in `review.md` with the hash.\n\n6. **Wait for the checks**, then go back to step 2. Repeat until the list is empty or every remaining item is an escalation or an answer awaiting its author.\n\n7. **Learn.** A comment of the same kind as one in an earlier review, in this change's `review.md` or another's, is a pattern: apply the `toolkit:claude-md` discipline and propose the line.\n\n8. **Report.** What is green, what was answered and awaits a reply, what was escalated and to which artifact, and whether the pull request is ready to merge. Merging is the user's; say so.\n\n## Rules\n\n- Fix exactly what was asked. A sweep is not a refactor.\n- One commit per item, with the thread or check named, so the reviewer can follow.\n- Never force-push, never rebase a pushed branch, never resolve a thread the author has not been answered on.\n- A design-level comment stops the sweep. The artifact changes first, then the code.\n- A merge conflict stops the sweep, whether found at the start or after a push. The user resolves it.\n" : skills/pr-sweep: a skill that commits must say it never pushes
+
+----------------------------------------------------------------------
+Ran 46 tests in 1.304s
+
+FAILED (failures=1)
+```

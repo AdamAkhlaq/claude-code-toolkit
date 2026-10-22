@@ -15,7 +15,7 @@ If the argument is empty, use `gh pr view --json number` on the current branch.
 
 ## Steps
 
-1. **Preconditions.** `.claude/toolkit.json` exists with a `feedbackCommand`. `gh auth status` succeeds. The pull request's head branch is checked out and the tree is clean. Note the change id from the branch name or the commit trailers.
+1. **Preconditions.** `.claude/toolkit.json` exists with a `feedbackCommand`. `gh auth status` succeeds. The pull request's head branch is checked out and the tree is clean. Note the change id from the branch name or the commit trailers. Check `gh pr view <n> --json mergeable`: a merge conflict with the base branch is a stop condition. Show the conflicting files from `git merge-tree` and hand the resolution to the user; resolving someone's conflict silently rewrites their intent.
 
 2. **Read the whole list first.** Collect, in one pass:
    - Unresolved review threads: `gh api graphql` on `pullRequest.reviewThreads` with `isResolved`, `path`, `line`, and each comment's author and body.
@@ -48,3 +48,4 @@ If the argument is empty, use `gh pr view --json number` on the current branch.
 - One commit per item, with the thread or check named, so the reviewer can follow.
 - Never force-push, never rebase a pushed branch, never resolve a thread the author has not been answered on.
 - A design-level comment stops the sweep. The artifact changes first, then the code.
+- A merge conflict stops the sweep, whether found at the start or after a push. The user resolves it.

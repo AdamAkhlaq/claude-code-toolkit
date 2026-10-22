@@ -1,0 +1,13 @@
+{
+  "name": "toolkit",
+  "version": "0.1.0",
+  "description": "An opinionated engineering workflow for Claude Code: human-gated artifacts from intent to merged code, a ticket graph for the build, and hooks that enforce the rules that must always hold.",
+  "author": {
+    "name": "Adam Akhlaq",
+    "url": "https://github.com/AdamAkhlaq"
+  },
+  "homepage": "https://github.com/AdamAkhlaq/claude-code-toolkit",
+  "repository": "https://github.com/AdamAkhlaq/claude-code-toolkit",
+  "license": "MIT",
+  "keywords": ["workflow", "sdlc", "tickets", "tdd", "hooks", "engineering"]
+}

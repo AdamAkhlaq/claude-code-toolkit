@@ -51,3 +51,7 @@ A single Claude Code plugin, `toolkit`, served from this repo's own marketplace,
 - Decision, open: GitHub issues as a ticket mirror. Deferred to after phase 3. Local ticket files are the only store until then.
 - Fact, resolved: plugins can bundle skills, agents, hooks, commands, MCP and LSP servers, and `bin/` executables. Confirmed against the plugin docs on 2026-10-21.
 - Fact, resolved: auto-update is off by default for marketplaces other than the official one. Users run `claude plugin update toolkit@adamakhlaq`.
+
+## Amendment 2026-10-21: validate and the root CLAUDE.md
+
+Resolved: `claude plugin validate .` passes with one warning, that a `CLAUDE.md` at the plugin root is not loaded into consumers' sessions. `--strict` fails on it. The maintainer `CLAUDE.md` stays, and validation runs without `--strict`.

@@ -113,3 +113,7 @@ A user-invoked skill may call model-invoked skills through the Skill tool, namin
 - The plugin docs state that a `CLAUDE.md` at the plugin root is not loaded and that validate warns about it. This repo wants a maintainer `CLAUDE.md`. Resolution: keep it, verify in phase 0, drop `--strict` if that is the only warning.
 - `review` sits beside Claude Code's built-in code review and `researcher` beside the built-in Explore agent. Resolution: keep both, because `review` adds the spec-compliance pass and `researcher` adds citation discipline. Revisit if they prove redundant.
 - The originator's global rule requires end-to-end reproduction of bugs. The philosophy prefers fast unit tests. Resolution, recorded in `PHILOSOPHY.md`: reproduce as reported first, then minimise to the fastest test that fails for the same reason.
+
+## Amendment 2026-10-21: hooks and the graph tool are Python
+
+Hook scripts are `hooks/scripts/<name>.py`, not `.sh`, and share `hooks/scripts/_common.py`. The graph tool is Python too. Both use the standard library only, so a consuming repo needs `python3` and `git` and nothing else, and there is no `jq` dependency. One extra config key exists: `secretAllowlist`, paths where credential-looking strings are expected, read by `secret-guard`. Path patterns with no `/` other than a trailing one match anywhere in the tree.

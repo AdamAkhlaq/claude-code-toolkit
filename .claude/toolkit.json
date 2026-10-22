@@ -1,0 +1,13 @@
+{
+  "protectedPaths": [],
+  "formatters": {
+    "*.{md,json}": "npx --no-install prettier --write {file}"
+  },
+  "linters": {},
+  "testGlobs": ["tests/"],
+  "feedbackCommand": "python3 -m unittest discover -s tests",
+  "gatedCommands": ["^git tag ", "^gh release "],
+  "secretAllowlist": ["tests/"],
+  "concurrency": 1,
+  "tracker": "local"
+}

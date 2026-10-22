@@ -1,0 +1,29 @@
+# Glossary
+
+The toolkit's own vocabulary. Skills, hooks, docs and conversation use these words with exactly these meanings. Add a term the first time it is coined; never redefine one in passing.
+
+- **Change**: one unit of work from idea to merge. Lives at `docs/changes/<NNNN>-<slug>/` and owns an intent, a spec, a plan and a ticket graph.
+- **Change id**: the zero-padded sequence number of a change, allocated by `toolkit-graph new`. Appears as a `Change: NNNN` commit trailer.
+- **Gate**: a point where a human accepts or rejects an artifact before the next stage starts. The four gates are intent, spec, plan and tickets.
+- **Artifact**: a committed Markdown file with YAML frontmatter that a gate produces. Amended after its gate with a dated section, never rewritten.
+- **Intent**: the first artifact. The problem and the proposed outcome in the originator's own words, plus what was found by looking.
+- **Spec**: the second artifact. The agreed outcome in testable terms, scope, requirements, and policy conflicts.
+- **Plan**: the third artifact. The approach, the seams, the execution decision, the interrogation and the rejected alternatives.
+- **Ticket**: one tracer bullet in a change: a single behaviour, the files it touches, the test that proves it, and the tickets it waits for.
+- **Tracer bullet**: a thin vertical slice that proves one behaviour end to end, as opposed to a horizontal layer.
+- **Ticket graph**: the tickets of a change and their `blocked_by` edges. Validated for cycles and file overlap before any ticket runs.
+- **Frontier**: the tickets that can start now: not done, and every ticket they are blocked by is done.
+- **Blocked by**: the dependency edge. A ticket lists the ids it waits for, never the ids that wait for it.
+- **Seam**: a public boundary where behaviour can be observed without reaching inside. Tests are written at seams the plan agreed, nowhere else.
+- **Proves**: a ticket's single proving test, written before the code and named in the ticket's frontmatter.
+- **Feedback command**: the one command that runs the project's checks and exits non-zero on failure. Its quoted output is the evidence that a ticket is done.
+- **Evidence**: the quoted output of the feedback command, recorded in the ticket, and the verifier's verdict beneath it.
+- **Executor**: whoever works a ticket: a single agent in the session, a subagent, an agent team member, or a headless run. Chosen per change in the plan, overridable per ticket.
+- **Integration branch**: the branch a change's tickets merge into, one worktree branch per ticket, after the verifier passes.
+- **One-way door**: a change that cannot be walked back, such as a migration or a production deploy. Runs with a human watching and behind the deploy gate.
+- **Two-way door**: a change that can be reverted cheaply. Runs unattended.
+- **Important**: a review finding that breaks behaviour, leaks data, breaches policy or diverges from the spec. Must be fixed or waived before merge.
+- **Nit**: any other review finding. Capped at five per review.
+- **Policy skill**: a skill that encodes one rule the project must apply consistently, such as a security or compliance standard.
+- **User-invoked**: a skill only the human can start, by typing `/toolkit:<name>`. It orchestrates.
+- **Model-invoked**: a skill Claude can reach for on its own when the task fits. It holds reusable discipline.

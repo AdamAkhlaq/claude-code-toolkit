@@ -1,0 +1,424 @@
+#!/usr/bin/env python3
+"""toolkit-graph: deterministic operations over a change's ticket graph.
+
+Standard library only. A change lives at docs/changes/<NNNN>-<slug>/ and its
+tickets at tickets/<Tn>-<slug>.md, each with YAML frontmatter:
+
+    ---
+    id: T3
+    title: Wire the middleware into the router
+    blocked_by: [T1, T2]
+    files: [src/router.ts]
+    proves: "101 requests in a minute to /api returns 429 on the 101st"
+    status: todo
+    ---
+
+Commands:
+    new <slug>          allocate the next change id and create its folder
+    validate <change>   check the graph; exit 1 with every error listed
+    frontier <change>   tickets ready to start: unblocked and not done
+    status <change>     every ticket with its status and blockers
+    render <change>     the graph as Mermaid
+
+<change> is a path, a change id such as 0007, or a slug.
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+CHANGES_RELPATH = Path("docs") / "changes"
+STATUSES = ("todo", "in-progress", "done", "reopened")
+READY_STATUSES = ("todo", "reopened")
+TICKET_ID = re.compile(r"^T[1-9]\d*$")
+CHANGE_DIR = re.compile(r"^(\d{4})-([a-z0-9]+(?:-[a-z0-9]+)*)$")
+SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+class GraphError(Exception):
+    pass
+
+
+# Frontmatter -----------------------------------------------------------------
+
+
+def _scalar(raw: str):
+    raw = raw.strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"'":
+        return raw[1:-1]
+    if raw in ("true", "True"):
+        return True
+    if raw in ("false", "False"):
+        return False
+    if re.fullmatch(r"-?\d+", raw):
+        return int(raw)
+    return raw
+
+
+def _flow_list(raw: str):
+    inner = raw.strip()[1:-1].strip()
+    if not inner:
+        return []
+    items, current, quote = [], "", None
+    for char in inner:
+        if quote:
+            if char == quote:
+                quote = None
+            else:
+                current += char
+        elif char in "\"'":
+            quote = char
+        elif char == ",":
+            items.append(current)
+            current = ""
+        else:
+            current += char
+    items.append(current)
+    return [_scalar(item) for item in items if item.strip()]
+
+
+def parse_frontmatter(text: str) -> dict:
+    """A deliberately small YAML subset: scalars, flow lists, block lists."""
+    if not text.startswith("---\n"):
+        raise GraphError("missing frontmatter (file must start with ---)")
+    end = text.find("\n---", 4)
+    if end == -1:
+        raise GraphError("unterminated frontmatter (no closing ---)")
+    data, key = {}, None
+    for line in text[4:end].split("\n"):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        pair = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", line)
+        if pair:
+            key, raw = pair.group(1), pair.group(2).strip()
+            if not raw:
+                data[key] = None
+            elif raw.startswith("[") and raw.endswith("]"):
+                data[key] = _flow_list(raw)
+            else:
+                data[key] = _scalar(raw)
+            continue
+        item = re.match(r"^\s*-\s+(.*)$", line)
+        if item and key is not None:
+            if data[key] is None:
+                data[key] = []
+            if not isinstance(data[key], list):
+                raise GraphError(f"'{key}' mixes a scalar with a list")
+            data[key].append(_scalar(item.group(1)))
+            continue
+        raise GraphError(f"cannot parse frontmatter line: {line.strip()!r}")
+    return data
+
+
+# Loading ---------------------------------------------------------------------
+
+
+def project_root(override) -> Path:
+    if override:
+        return Path(override)
+    env = os.environ.get("CLAUDE_PROJECT_DIR")
+    return Path(env) if env else Path.cwd()
+
+
+def changes_dir(root: Path) -> Path:
+    return root / CHANGES_RELPATH
+
+
+def resolve_change(root: Path, ref: str) -> Path:
+    direct = Path(ref)
+    if direct.is_dir() and ((direct / "intent.md").exists() or (direct / "tickets").is_dir()):
+        return direct
+    base = changes_dir(root)
+    if not base.is_dir():
+        raise GraphError(f"no changes directory at {base}")
+    wanted_id = ref.zfill(4) if ref.isdigit() else None
+    for candidate in sorted(base.iterdir()):
+        match = CHANGE_DIR.match(candidate.name)
+        if not match:
+            continue
+        if candidate.name == ref or (wanted_id and match.group(1) == wanted_id) or match.group(2) == ref:
+            return candidate
+    raise GraphError(f"no change matching {ref!r} under {base}")
+
+
+def _as_str_list(value, field, ticket_name, errors):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        errors.append(f"{ticket_name}: '{field}' must be a list of strings")
+        return []
+    return [item.strip() for item in value if item.strip()]
+
+
+def load_tickets(change: Path):
+    """Returns (tickets, errors). Tickets are dicts; errors are strings."""
+    folder = change / "tickets"
+    tickets, errors = [], []
+    if not folder.is_dir():
+        return tickets, [f"no tickets folder at {folder}"]
+    for path in sorted(folder.glob("*.md")):
+        name = path.name
+        try:
+            data = parse_frontmatter(path.read_text(encoding="utf-8"))
+        except (OSError, GraphError) as exc:
+            errors.append(f"{name}: {exc}")
+            continue
+        ticket = {
+            "file": name,
+            "id": str(data.get("id") or "").strip(),
+            "title": str(data.get("title") or "").strip(),
+            "proves": str(data.get("proves") or "").strip(),
+            "status": str(data.get("status") or "").strip(),
+            "blocked_by": _as_str_list(data.get("blocked_by"), "blocked_by", name, errors),
+            "files": _as_str_list(data.get("files"), "files", name, errors),
+            "serial": bool(data.get("serial", False)),
+            "executor": data.get("executor"),
+        }
+        for field in ("id", "title", "proves", "status"):
+            if not ticket[field]:
+                errors.append(f"{name}: missing '{field}'")
+        if ticket["id"] and not TICKET_ID.match(ticket["id"]):
+            errors.append(f"{name}: id '{ticket['id']}' must look like T1, T2, ...")
+        if ticket["status"] and ticket["status"] not in STATUSES:
+            errors.append(f"{name}: status '{ticket['status']}' is not one of {', '.join(STATUSES)}")
+        if ticket["id"] and not (name == f"{ticket['id']}.md" or name.startswith(f"{ticket['id']}-")):
+            errors.append(f"{name}: file name must start with its id ('{ticket['id']}-' or '{ticket['id']}.md')")
+        if not ticket["files"]:
+            errors.append(f"{name}: 'files' must list at least one path the ticket touches")
+        tickets.append(ticket)
+    return tickets, errors
+
+
+# Graph -----------------------------------------------------------------------
+
+
+def build_graph(tickets):
+    """Returns (by_id, errors) with dependency edges checked for resolution and cycles."""
+    by_id, errors = {}, []
+    for ticket in tickets:
+        if not ticket["id"]:
+            continue
+        if ticket["id"] in by_id:
+            errors.append(f"duplicate id {ticket['id']} ({by_id[ticket['id']]['file']} and {ticket['file']})")
+            continue
+        by_id[ticket["id"]] = ticket
+    for ticket in by_id.values():
+        for dep in ticket["blocked_by"]:
+            if dep == ticket["id"]:
+                errors.append(f"{ticket['id']} is blocked by itself")
+            elif dep not in by_id:
+                errors.append(f"{ticket['id']} is blocked by unknown ticket {dep}")
+    state = {}
+
+    def visit(node, trail):
+        if state.get(node) == "done":
+            return
+        if state.get(node) == "active":
+            cycle = trail[trail.index(node) :] + [node]
+            errors.append("dependency cycle: " + " -> ".join(cycle))
+            return
+        state[node] = "active"
+        for dep in by_id[node]["blocked_by"]:
+            if dep in by_id:
+                visit(dep, trail + [node])
+        state[node] = "done"
+
+    for node in sorted(by_id):
+        visit(node, [])
+    return by_id, errors
+
+
+def ancestors(by_id, node, seen=None):
+    seen = set() if seen is None else seen
+    for dep in by_id[node]["blocked_by"]:
+        if dep in by_id and dep not in seen:
+            seen.add(dep)
+            ancestors(by_id, dep, seen)
+    return seen
+
+
+def parallel_conflicts(by_id):
+    """Pairs of tickets with no ordering between them that touch the same file."""
+    reach = {node: ancestors(by_id, node) for node in by_id}
+    conflicts = []
+    ids = sorted(by_id)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1 :]:
+            if a in reach[b] or b in reach[a]:
+                continue
+            shared = sorted(set(by_id[a]["files"]) & set(by_id[b]["files"]))
+            if shared:
+                conflicts.append((a, b, shared))
+    return conflicts
+
+
+def validate(change: Path):
+    tickets, errors = load_tickets(change)
+    by_id, graph_errors = build_graph(tickets)
+    errors.extend(graph_errors)
+    if not any("cycle" in e for e in errors):
+        for a, b, shared in parallel_conflicts(by_id):
+            errors.append(
+                f"{a} and {b} can run in parallel but both touch {', '.join(shared)}; "
+                "add a blocked_by edge or split the files"
+            )
+    return tickets, by_id, errors
+
+
+def frontier(by_id):
+    ready = []
+    for ticket in by_id.values():
+        if ticket["status"] not in READY_STATUSES:
+            continue
+        if all(by_id[dep]["status"] == "done" for dep in ticket["blocked_by"] if dep in by_id):
+            ready.append(ticket)
+    return sorted(ready, key=lambda t: int(t["id"][1:]))
+
+
+# Commands --------------------------------------------------------------------
+
+
+def cmd_new(args) -> int:
+    root = project_root(args.root)
+    if not SLUG.match(args.slug):
+        print(f"error: slug {args.slug!r} must be lowercase words joined by single dashes", file=sys.stderr)
+        return 1
+    base = changes_dir(root)
+    highest = 0
+    if base.is_dir():
+        for candidate in base.iterdir():
+            match = CHANGE_DIR.match(candidate.name)
+            if match:
+                highest = max(highest, int(match.group(1)))
+    folder = base / f"{highest + 1:04d}-{args.slug}"
+    if not args.dry_run:
+        (folder / "tickets").mkdir(parents=True, exist_ok=False)
+    print(folder.relative_to(root).as_posix())
+    return 0
+
+
+def _load_or_fail(args):
+    root = project_root(args.root)
+    change = resolve_change(root, args.change)
+    tickets, by_id, errors = validate(change)
+    return change, tickets, by_id, errors
+
+
+def cmd_validate(args) -> int:
+    change, tickets, by_id, errors = _load_or_fail(args)
+    if args.json:
+        print(json.dumps({"change": change.name, "tickets": len(tickets), "errors": errors}, indent=2))
+    elif errors:
+        print(f"{change.name}: {len(errors)} error(s)")
+        for error in errors:
+            print(f"  - {error}")
+    else:
+        print(f"{change.name}: ok ({len(tickets)} tickets)")
+    return 1 if errors else 0
+
+
+def cmd_frontier(args) -> int:
+    change, _, by_id, errors = _load_or_fail(args)
+    if errors:
+        print(f"{change.name}: graph is invalid, run `toolkit-graph validate` first", file=sys.stderr)
+        return 1
+    ready = frontier(by_id)
+    if args.json:
+        print(json.dumps(ready, indent=2))
+        return 0
+    if not ready:
+        remaining = [t["id"] for t in by_id.values() if t["status"] != "done"]
+        print("frontier is empty" + (f"; waiting on {', '.join(remaining)}" if remaining else "; every ticket is done"))
+        return 0
+    for ticket in ready:
+        flags = []
+        if ticket["serial"]:
+            flags.append("serial")
+        if ticket["executor"]:
+            flags.append(f"executor={ticket['executor']}")
+        if ticket["status"] == "reopened":
+            flags.append("reopened")
+        suffix = f"  [{', '.join(flags)}]" if flags else ""
+        print(f"{ticket['id']}  {ticket['title']}  files={','.join(ticket['files'])}{suffix}")
+    return 0
+
+
+def cmd_status(args) -> int:
+    change, tickets, by_id, errors = _load_or_fail(args)
+    if args.json:
+        print(json.dumps({"change": change.name, "tickets": tickets, "errors": errors}, indent=2))
+        return 1 if errors else 0
+    counts = {status: 0 for status in STATUSES}
+    for ticket in tickets:
+        if ticket["status"] in counts:
+            counts[ticket["status"]] += 1
+    print(f"{change.name}: " + ", ".join(f"{n} {s}" for s, n in counts.items() if n))
+    width = max((len(t["id"]) for t in tickets), default=2)
+    for ticket in sorted(tickets, key=lambda t: int(t["id"][1:]) if TICKET_ID.match(t["id"]) else 0):
+        blockers = ", ".join(ticket["blocked_by"]) or "-"
+        print(f"  {ticket['id']:<{width}}  {ticket['status']:<11}  blocked_by={blockers:<12}  {ticket['title']}")
+    if errors:
+        print(f"{len(errors)} error(s), run `toolkit-graph validate` for details")
+    return 1 if errors else 0
+
+
+def cmd_render(args) -> int:
+    change, _, by_id, errors = _load_or_fail(args)
+    if errors:
+        print(f"{change.name}: graph is invalid, run `toolkit-graph validate` first", file=sys.stderr)
+        return 1
+    lines = ["graph TD"]
+    for ticket in sorted(by_id.values(), key=lambda t: int(t["id"][1:])):
+        label = ticket["title"].replace('"', "'")
+        lines.append(f'  {ticket["id"]}["{ticket["id"]} {label}"]:::{ticket["status"].replace("-", "_")}')
+    for ticket in sorted(by_id.values(), key=lambda t: int(t["id"][1:])):
+        for dep in ticket["blocked_by"]:
+            lines.append(f"  {dep} --> {ticket['id']}")
+    lines.extend(
+        [
+            "  classDef todo fill:#f5f5f5,stroke:#888",
+            "  classDef in_progress fill:#fff3cd,stroke:#b8860b",
+            "  classDef done fill:#d4edda,stroke:#2e7d32",
+            "  classDef reopened fill:#f8d7da,stroke:#c62828",
+        ]
+    )
+    print("\n".join(lines))
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(prog="toolkit-graph", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--root", help="project root (default: $CLAUDE_PROJECT_DIR or the current directory)")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    new = sub.add_parser("new", help="allocate the next change id and create its folder")
+    new.add_argument("slug")
+    new.add_argument("--dry-run", action="store_true", help="print the path without creating it")
+    new.set_defaults(func=cmd_new)
+
+    for name, func, help_text in (
+        ("validate", cmd_validate, "check the ticket graph"),
+        ("frontier", cmd_frontier, "tickets ready to start"),
+        ("status", cmd_status, "every ticket with its status and blockers"),
+        ("render", cmd_render, "the graph as Mermaid"),
+    ):
+        command = sub.add_parser(name, help=help_text)
+        command.add_argument("change", help="change path, id or slug")
+        command.add_argument("--json", action="store_true")
+        command.set_defaults(func=func)
+
+    args = parser.parse_args(argv)
+    try:
+        return args.func(args)
+    except GraphError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

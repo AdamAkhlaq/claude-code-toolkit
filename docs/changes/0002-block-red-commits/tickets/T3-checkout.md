@@ -5,7 +5,7 @@ blocked_by: [T2]
 files:
   [hooks/scripts/_common.py, hooks/scripts/red_guard.py, tests/test_hooks.py]
 proves: "in tests/test_hooks.py, with a linked worktree whose feedback command exits 1 and a main checkout whose feedback command exits 0, a `git commit` event with `cwd` set to the worktree exits 2, and so do `git -C <worktree> commit` and `cd <worktree> && git commit` from the main checkout"
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0002-T3
 ---
@@ -48,3 +48,16 @@ Ran 57 tests in 2.862s
 
 OK
 ```
+
+### Verifier 2026-10-22 19:39
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok, `test_checks_the_worktree_the_commit_lands_in` added on this branch, drives `red_guard.py` as a subprocess with `CLAUDE_PROJECT_DIR` on the green main checkout; against the integration branch's `red_guard.py` it fails `0 != 2` on the event `cwd` form, with only `cd` parsing disabled it fails on `cd .claude/worktrees/w1 && git add -A && git commit -m x`, with `-C` and `cd` parsing disabled it fails on `git -C .claude/worktrees/w1 commit -m x`
+3. proving test run: 0, `Ran 1 test in 0.371s OK`
+4. feedback command: 0, `Ran 57 tests in 2.765s OK`
+5. acceptance: 3 of 3 checked, none failed (proving test passes; `commit_checkout` falls back via `event.get("cwd") or project_dir()`, the no-`cwd` commit in the proving test exits 0 on the main checkout, and the T1 and T2 tests are unchanged on the branch and pass; full suite passes)
+6. scope: ok
+7. tests intact: ok, the diff to `tests/test_hooks.py` only adds lines

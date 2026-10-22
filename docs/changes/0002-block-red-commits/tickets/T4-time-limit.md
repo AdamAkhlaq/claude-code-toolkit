@@ -4,7 +4,9 @@ title: A feedback command that cannot finish is red, and faults never block othe
 blocked_by: [T3]
 files: [hooks/scripts/red_guard.py, tests/test_hooks.py]
 proves: "in tests/test_hooks.py, red_guard.run_feedback(command, cwd, limit=1) on a shell command that starts a child sleeping 30 seconds returns within 5 seconds reporting it timed out, and the child process is gone"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0002-T4
 ---
 
 ## Context

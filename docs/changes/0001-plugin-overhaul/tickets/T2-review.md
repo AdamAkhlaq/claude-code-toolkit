@@ -13,7 +13,9 @@ files:
     skills/guide/SKILL.md,
   ]
 proves: "tests/test_components.py passes with the README listing review as shipped in 0.3.0 and the reviewer agent carrying a read-only tool allowlist"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0001-T2
 ---
 
 ## Context

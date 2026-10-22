@@ -265,6 +265,58 @@ class RedGuardTests(HookCase):
         self.assertEqual(run_hook("red_guard.py", bash_event("git status"), self.root), (0, "", ""))
         self.assertFalse(marker.exists())
 
+    def configure_committed(self, **config):
+        self.configure(**config)
+        self.git("add", ".claude")
+        self.git("commit", "-q", "-m", "config")
+
+    def test_only_workflow_documents_and_tests_skip_the_check(self):
+        self.init_repo()
+        marker = self.root / "ran"
+        self.configure_committed(feedbackCommand=feedback(1, "boom", marker=str(marker)), testGlobs=["tests/"])
+        (self.root / "docs" / "changes" / "0009-x").mkdir(parents=True)
+        (self.root / "docs" / "changes" / "0009-x" / "intent.md").write_text("# Intent\n")
+        (self.root / "GLOSSARY.md").write_text("# Glossary\n")
+        (self.root / "tests").mkdir()
+        (self.root / "tests" / "test_x.py").write_text("assert False\n")
+        self.git("add", "docs", "GLOSSARY.md")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        self.assertFalse(marker.exists())
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event("git commit -m x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertTrue(marker.exists())
+        self.assertIn("boom", err)
+
+    def test_staged_and_unstaged_source_changes_both_count(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1))
+        (self.root / "README.md").write_text("changed\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -am x"), self.root)[0], 2)
+        self.git("add", "README.md")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root)[0], 2)
+
+    def test_paths_with_spaces_and_nested_workflow_names_are_classified(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1), testGlobs=["tests/"])
+        (self.root / "docs").mkdir()
+        (self.root / "docs" / "my notes.md").write_text("x\n")
+        (self.root / "REVIEW.md").write_text("x\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        (self.root / "lib").mkdir()
+        (self.root / "lib" / "GLOSSARY.md").write_text("x\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root)[0], 2)
+        (self.root / "lib" / "GLOSSARY.md").unlink()
+        (self.root / "my app.py").write_text("x = 1\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root)[0], 2)
+
+    def test_renaming_source_into_docs_still_runs_the_check(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1))
+        (self.root / "docs").mkdir()
+        self.git("mv", "README.md", "docs/README.md")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root)[0], 2)
+
     def test_quotes_only_the_last_forty_lines(self):
         self.init_repo()
         self.configure(feedbackCommand=f"{PY} -c \"print('\\n'.join('line %d' % i for i in range(100))); raise SystemExit(3)\"")

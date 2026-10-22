@@ -29,3 +29,22 @@ Seam: the hook script as a subprocess, `tests/test_hooks.py`.
 - `python3 -m unittest discover -s tests` passes.
 
 ## Evidence
+
+### Evidence 2026-10-22 19:36
+
+Failing first: `test_only_workflow_documents_and_tests_skip_the_check` failed with `(2, '', 'Commit stopped: the feedback comm...') != (0, '', '')`, the docs-and-tests commit being blocked because the skip set did not exist. `test_paths_with_spaces_and_nested_workflow_names_are_classified` failed the same way on its first assertion.
+
+Added `pending_paths` (`git status --porcelain -z --untracked-files=all`) and `needs_check` to `hooks/scripts/red_guard.py`. One departure from the Context, in favour of spec requirement 4 ("every path `git status --porcelain` reports"): both sides of a rename count, not only the destination, because moving a source file into `docs/` removes it from the product; pinned by `test_renaming_source_into_docs_still_runs_the_check`. If `git status` fails the check runs, so an unreadable state never opens the gate. Workflow documents are `docs/...` and `GLOSSARY.md`, `REVIEW.md` at the root only; `lib/GLOSSARY.md` is source. Also fixed the verifier's T1 note: one line of output now reads "Last 1 line of output".
+
+Proving test: `tests.test_hooks.RedGuardTests.test_only_workflow_documents_and_tests_skip_the_check`. Acceptance tests beside it: `test_staged_and_unstaged_source_changes_both_count`, `test_paths_with_spaces_and_nested_workflow_names_are_classified`, `test_renaming_source_into_docs_still_runs_the_check`. The T1 tests still pass unchanged: their uncommitted `.claude/toolkit.json` is itself a pending source change.
+
+Command: `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+----------------------------------------------------------------------
+Ran 56 tests in 2.366s
+
+OK
+```

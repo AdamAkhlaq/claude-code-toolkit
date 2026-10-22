@@ -10,7 +10,9 @@ files:
     docs/changes/0001-plugin-overhaul/spec.md,
   ]
 proves: "the plugin manifest says 0.3.0, CHANGELOG has a 0.3.0 section with today's date, and the whole test suite and plugin validation pass"
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0001-T4
 ---
 
 ## Context

@@ -133,3 +133,11 @@ Hook scripts are `hooks/scripts/<name>.py`, not `.sh`, and share `hooks/scripts/
 - `review.md` joins the change folder's artifacts, written by `review`, with every Important finding as a checkbox closed by a fix commit hash or a named waiver. Findings are also posted to the pull request as inline comments so that `pr-sweep` can resolve them.
 - `pr-sweep` is the one skill that pushes, with the user's approval per push and never by force. The structural test now states that rule instead of the earlier never-push heuristic.
 - Phase 2 was executed through the workflow: tickets T1 to T4 under this change, `single` execution on `change/0001-phase-2`, one fresh-context verifier per ticket. T3 was reopened twice by verifiers, both times correctly, and fixed in the session rather than stopping the run, since the originator was the executor.
+
+## Amendment 2026-10-22: phase 3 conventions
+
+- Eval cases use the `claude plugin eval` layout: `evals/<case>/prompt.md` plus `graders/*.md`. Each case needs at least one deterministic grader. `regex` graders are JavaScript regexes, so case-insensitivity is `flags: i`. On this maintainer's machine the runner refuses a Bash grant, so the plugin's own cases need none.
+- `postmortem` and `policy-skill` write eval cases from `templates/eval-case.md` directly rather than through `eval-case`, which is user-invoked and therefore not callable from a skill.
+- Templates that ship fenced YAML use `<PLACEHOLDER>` rather than `{{PLACEHOLDER}}`, which prettier rewrites.
+- CI runs the unit tests and `claude plugin validate .` without `--strict`, because the root `CLAUDE.md` warning is expected. `claude plugin validate` needs no credentials. The eval suite is run by hand before a release.
+- `templates/incident.md` and `templates/policy-skill.md` join the template list.

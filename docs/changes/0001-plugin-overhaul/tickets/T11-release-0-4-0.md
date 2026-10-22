@@ -29,3 +29,18 @@ Seam: `python3 -m unittest discover -s tests` and `claude plugin validate .`.
 - Every component in PHILOSOPHY's "Enforced by" column is a link.
 
 ## Evidence
+
+### Evidence 2026-10-22 18:01
+
+Command: a release check (manifest says 0.4.0, CHANGELOG has a dated 0.4.0 section, no `planned` in the README, the intent is `shipped`, every component name in PHILOSOPHY's Enforced by column is a link, the test suite is OK, `claude plugin validate .` passes) followed by `python3 -m unittest discover -s tests`
+
+Exit code: 0
+
+```
+release-check: ok
+Ran 49 tests in 1.358s
+
+OK
+```
+
+Before the bump the same check exited 1 on the manifest version.

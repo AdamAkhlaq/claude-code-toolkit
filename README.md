@@ -34,7 +34,7 @@ Each stage commits an artifact under `docs/changes/<NNNN>-<slug>/`. The build st
 
 ## Status
 
-This is version 0.3.0: the gates, the build loop, bug fixing, review and the pull request sweep. A change can go from an idea to a green pull request. The maintenance skills land in 0.4.0.
+This is version 0.4.0: every skill, agent and hook in the design is live. A change goes from an idea to a green pull request, bugs are reproduced before they are fixed, findings and incidents re-enter as intents, and the plugin's own eval suite checks that the skills do what they say.
 
 | Skill          | Invocation | Status | What it does                                                           |
 | -------------- | ---------- | ------ | ---------------------------------------------------------------------- |

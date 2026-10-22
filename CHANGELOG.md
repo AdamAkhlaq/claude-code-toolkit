@@ -4,6 +4,25 @@ All notable changes to this plugin are recorded here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-22
+
+Phase 3: maintain and hardening. The loop closes: findings from running software and incidents re-enter the workflow as intents, lessons become eval cases, policies become skills, and the plugin tests itself. This completes change 0001.
+
+### Added
+
+- `diagnose` skill: read-only diagnosis of a finding from running software, written as a new `intent.md`.
+- `postmortem` skill and `templates/incident.md`: a blameless incident record under `docs/incidents/`, follow-up intents, and an eval case.
+- `eval-case` skill and `templates/eval-case.md`: a prompt plus graders under `evals/` in the format `claude plugin eval` runs.
+- `policy-skill` skill and `templates/policy-skill.md`: one policy as a model-invoked skill in the repo's `.claude/skills/`, with two trigger tests.
+- `evals/`: the plugin's own eval suite, three cases that pass with the plugin and fail without it.
+- `.github/workflows/validate.yml`: unit tests and `claude plugin validate .` on every pull request and push to main. Validation needs no credentials.
+- A unit test pinning the deploy gate's block message, after the gate was exercised end to end in a real session.
+- Glossary terms: incident, follow-up, eval case, grader.
+
+### Changed
+
+- `tests/test_components.py` checks the shape of every eval case: a named prompt, at least one grader of a known type, and at least one deterministic grader.
+
 ## [0.3.0] - 2026-10-22
 
 Phase 2: test and deploy. Bugs are reproduced before they are fixed, reviews run as independent passes, and pull requests are swept to green. This is the first phase built through the workflow itself: four tickets under `docs/changes/0001-plugin-overhaul/tickets/`, each verified in a fresh context before merge.
@@ -53,7 +72,8 @@ Phase 0: plumbing. The plugin installs, the hooks enforce, the graph tool runs, 
 - Templates for `intent.md`, `spec.md`, `plan.md`, tickets, `REVIEW.md` and `toolkit.json`.
 - `PHILOSOPHY.md`, `GLOSSARY.md`, and the repo's own first change under `docs/changes/0001-plugin-overhaul/`.
 
-[Unreleased]: https://github.com/AdamAkhlaq/claude-code-toolkit/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/AdamAkhlaq/claude-code-toolkit/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/AdamAkhlaq/claude-code-toolkit/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AdamAkhlaq/claude-code-toolkit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AdamAkhlaq/claude-code-toolkit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AdamAkhlaq/claude-code-toolkit/releases/tag/v0.1.0

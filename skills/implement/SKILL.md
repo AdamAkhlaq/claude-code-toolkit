@@ -52,7 +52,7 @@ The graph tool is `${CLAUDE_PLUGIN_ROOT}/bin/toolkit-graph`; run it as `python3 
 
    i. **Keep the graph true.** After each merge, `validate <change>`; if an executor added files to a ticket and that created an overlap, the validator says so, and that is a stop condition the user resolves by editing tickets.
 
-5. **Finish.** When every ticket is `done`: run the feedback command once more on the integration branch and quote the tail. Show `status <change>` and `render <change>`. Draft the pull request description: the change id and title, the spec's outcome in two lines, which tickets ran, whether the change was a one-way or two-way door, and the final evidence. Show it; the user pushes and opens the pull request, or asks you to run `gh pr create` with it. Say that `/toolkit:review` arrives in 0.3.0.
+5. **Finish.** When every ticket is `done`: run the feedback command once more on the integration branch and quote the tail. Show `status <change>` and `render <change>`. Draft the pull request description: the change id and title, the spec's outcome in two lines, which tickets ran, whether the change was a one-way or two-way door, and the final evidence. Show it; the user pushes and opens the pull request, or asks you to run `gh pr create` with it. The next step is `/toolkit:review <NNNN>`, before the pull request is opened.
 
 6. **Report.** Tickets merged, tickets stopped and why, and the exact command to resume: `/toolkit:implement <NNNN>` picks up from the frontier.
 

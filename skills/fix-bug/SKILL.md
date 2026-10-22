@@ -37,7 +37,7 @@ Templates are at `${CLAUDE_PLUGIN_ROOT}/templates/`. The graph tool is `${CLAUDE
 
 10. **Commit the fix, with approval.** Stage the code and the ticket. Message `fix(<scope>): <what was wrong>` with a body naming the root cause in a sentence, and the trailers. Set the ticket to `done` only after a `toolkit:verifier` agent has passed it; in a single-session fix, start the verifier now with the ticket path and the current directory.
 
-11. **Learn.** If the root cause is a class of mistake that has come up before in this repo, in a review or a correction, apply the `toolkit:claude-md` discipline. If it caused an incident, say that `/toolkit:postmortem` arrives in 0.4.0 and record the follow-up in the intent's Open questions.
+11. **Learn.** If the root cause is a class of mistake that has come up before in this repo, in a review or a correction, apply the `toolkit:claude-md` discipline. If it caused an incident, hand off to `/toolkit:postmortem`, which records it and its follow-ups.
 
 12. **Report.** The root cause in a sentence, the test that guards it, the evidence, and the next step: push and open a pull request, or `/toolkit:review` once it exists.
 

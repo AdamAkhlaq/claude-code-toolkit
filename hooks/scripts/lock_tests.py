@@ -7,20 +7,9 @@ make the test pass by changing the test.
 
 import sys
 
-from _common import block, first_match, load_config, project_dir, read_event, target_path
+from _common import DEFAULT_TEST_GLOBS, block, first_match, load_config, project_dir, read_event, target_path
 
 LOCK_RELPATH = ".claude/.tests-locked"
-
-DEFAULT_TEST_GLOBS = [
-    "*.test.*",
-    "*.spec.*",
-    "*_test.*",
-    "test_*",
-    "tests/",
-    "test/",
-    "__tests__/",
-    "spec/",
-]
 
 
 def main() -> int:

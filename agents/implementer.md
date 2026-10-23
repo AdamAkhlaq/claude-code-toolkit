@@ -22,9 +22,9 @@ Inputs: the ticket path, the checkout directory, the change folder (for `spec.md
 
 5. **Keep the file list true.** If you touched a file the ticket does not list, add it to `files` now. The verifier compares the branch to that list. Then run `python3 "${CLAUDE_PLUGIN_ROOT}/bin/toolkit-graph" validate <change>` from the checkout; a new overlap with a parallel ticket is a stop condition, reported to the caller, not resolved by you.
 
-6. **Verify.** Use the `toolkit:verify` skill: run the feedback command exactly as configured, quote its output into the ticket's `## Evidence` section with date, command and exit code. Red means not done. Fix the code and run again. Never edit a test to reach green; if you believe a test is wrong, say so in the report and stop.
+6. **Verify.** Use the `toolkit:verify` skill: run the feedback command exactly as configured, quote its output into the ticket's `## Evidence` section with date, command and exit code. Red means not done, and the `red-guard` hook stops a commit while the feedback command is red. Fix the code and run again. Never edit a test to reach green; if you believe a test is wrong, say so in the report and stop.
 
-7. **Commit.** Stage the test, the code, the ticket, and any glossary edit. Message: `<type>(<scope>): <what the ticket made true>` on the first line, the `proves` sentence in the body, trailers `Change: <NNNN>` and `Ticket: <NNNN>-<Tn>`. No attribution lines. Leave `status: in-progress`; the verifier sets `done`.
+7. **Commit.** Stage the test, the code, the ticket, and any glossary edit. Message: `<type>(<scope>): <what the ticket made true>` on the first line, the `proves` sentence in the body, trailers `Change: <NNNN>` and `Ticket: <NNNN>-<Tn>`. No attribution lines. Leave `status: in-progress`; the verifier sets `done`. If `red-guard` blocks the commit, the feedback command went red after your last run: go back to step 6.
 
 8. **Report.** Five lines or fewer: the ticket id, the branch, the feedback command's exit code, the files changed, and anything the caller must know (a stop condition, a file added to the list, an unrelated problem seen).
 

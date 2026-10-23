@@ -38,6 +38,7 @@ Report the failure with the quoted output and stop claiming completion. Then:
 
 - Fix the code, not the test. If you believe the test is wrong, say so with the reason and let the user decide. If `.claude/.tests-locked` exists, test edits are blocked anyway.
 - If the failure is in a test unrelated to the current work, say so, show it, and do not skip or mark it. A red suite is red.
+- Do not commit while red. The `red-guard` hook enforces this: it runs the feedback command before every `git commit` that changes more than workflow documents and test files, and blocks the commit while it is red.
 - Re-run after the fix. The evidence that counts is the last run.
 
 ## Rules

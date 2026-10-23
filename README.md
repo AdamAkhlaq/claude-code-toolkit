@@ -34,7 +34,7 @@ Each stage commits an artifact under `docs/changes/<NNNN>-<slug>/`. The build st
 
 ## Status
 
-This is version 0.4.0: every skill, agent and hook in the design is live. A change goes from an idea to a green pull request, bugs are reproduced before they are fixed, findings and incidents re-enter as intents, and the plugin's own eval suite checks that the skills do what they say.
+This is version 0.5.0: every skill, agent and hook in the design is live. A change goes from an idea to a green pull request, bugs are reproduced before they are fixed, no commit lands while the feedback command is red, findings and incidents re-enter as intents, and the plugin's own eval suite checks that the skills do what they say.
 
 | Skill          | Invocation | Status | What it does                                                           |
 | -------------- | ---------- | ------ | ---------------------------------------------------------------------- |
@@ -63,14 +63,15 @@ Agents: `researcher` (read-only facts with citations), `implementer` (one ticket
 
 All hooks read `.claude/toolkit.json` in the consuming repo and do nothing when it is absent.
 
-| Hook            | Fires on            | Config key              | Effect                                                                                              |
-| --------------- | ------------------- | ----------------------- | --------------------------------------------------------------------------------------------------- |
-| `protect-paths` | before Edit, Write  | `protectedPaths`        | Blocks the edit and explains the route                                                              |
-| `lock-tests`    | before Edit, Write  | `testGlobs`             | Blocks test edits while `.claude/.tests-locked` exists                                              |
-| `secret-guard`  | before `git commit` | `secretAllowlist`       | Blocks a commit that adds a credential-looking line                                                 |
-| `ticket-sync`   | before `git commit` | none                    | Asks when source is staged but the in-progress change's folder is not                               |
-| `deploy-gate`   | before Bash         | `gatedCommands`         | Blocks matching commands unless `RELEASE_AUTHORIZED` is set or `.claude/.release-authorized` exists |
-| `format-lint`   | after Edit, Write   | `formatters`, `linters` | Runs matching commands on the changed file, surfaces failures                                       |
+| Hook            | Fires on            | Config key                     | Effect                                                                                              |
+| --------------- | ------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `protect-paths` | before Edit, Write  | `protectedPaths`               | Blocks the edit and explains the route                                                              |
+| `lock-tests`    | before Edit, Write  | `testGlobs`                    | Blocks test edits while `.claude/.tests-locked` exists                                              |
+| `secret-guard`  | before `git commit` | `secretAllowlist`              | Blocks a commit that adds a credential-looking line                                                 |
+| `red-guard`     | before `git commit` | `feedbackCommand`, `testGlobs` | Blocks a commit while the feedback command is red, quoting its output                               |
+| `ticket-sync`   | before `git commit` | none                           | Asks when source is staged but the in-progress change's folder is not                               |
+| `deploy-gate`   | before Bash         | `gatedCommands`                | Blocks matching commands unless `RELEASE_AUTHORIZED` is set or `.claude/.release-authorized` exists |
+| `format-lint`   | after Edit, Write   | `formatters`, `linters`        | Runs matching commands on the changed file, surfaces failures                                       |
 
 A gated command is a one-way door. When `deploy-gate` blocks one, the agent prepares everything up to that step and stops; a human then authorises the release for the session with `export RELEASE_AUTHORIZED=1`, or for the checkout by creating `.claude/.release-authorized`, and the same command goes through. Both routes are named in the block message, and the hook fires inside a real session with the plugin loaded, not only in the unit tests.
 

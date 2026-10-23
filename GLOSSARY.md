@@ -24,6 +24,8 @@ The toolkit's own vocabulary. Skills, hooks, docs and conversation use these wor
 - **Proves**: a ticket's single proving test, written before the code and named in the ticket's frontmatter.
 - **Feedback command**: the one command that runs the project's checks and exits non-zero on failure. Its quoted output is the evidence that a ticket is done.
 - **Evidence**: the quoted output of the feedback command, recorded in the ticket, and the verifier's verdict beneath it.
+- **Red**: the feedback command exits non-zero, whatever the cause, including a failure unrelated to the current work. Its opposite is green.
+- **Workflow document**: a file the workflow writes about the product rather than the product itself: anything under `docs/`, plus `GLOSSARY.md` and `REVIEW.md`. Not: artifact, which is only what a gate produces.
 - **Eval case**: a directory under `evals/` holding a prompt that recreates a situation and graders that say whether the agent did the right thing. Pins a class of mistake, not an instance.
 - **Grader**: one check in an eval case: a pattern, a tool that was or was not used, a tool order, a file that exists, or a judge with a PASS/FAIL rubric. Deterministic graders come first.
 - **Executor**: whoever works a ticket: a single agent in the session, a subagent, an agent team member, or a headless run. Chosen per change in the plan, overridable per ticket.

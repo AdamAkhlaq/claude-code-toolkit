@@ -8,11 +8,23 @@ config is absent. A hook only ever acts on a project that opted in.
 import fnmatch
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 CONFIG_RELPATH = Path(".claude") / "toolkit.json"
+
+DEFAULT_TEST_GLOBS = [
+    "*.test.*",
+    "*.spec.*",
+    "*_test.*",
+    "test_*",
+    "tests/",
+    "test/",
+    "__tests__/",
+    "spec/",
+]
 
 
 def project_dir() -> Path:
@@ -121,20 +133,107 @@ def git(root: Path, *args: str):
     return result.stdout if result.returncode == 0 else None
 
 
-def is_git_commit(command: str) -> bool:
-    """True for `git commit`, allowing global options such as `git -C dir commit`."""
-    tokens = command.split()
+SHELLS = ("sh", "bash", "zsh", "dash")
+
+
+def shell_tokens(command: str) -> list:
+    """The words of a shell command with quotes removed, and its control operators as separate tokens: `a&&b;(c)` gives `a && b ; ( c )`."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        return list(lexer)
+    except ValueError:
+        return command.split()
+
+
+def is_operator(token: str) -> bool:
+    return bool(token) and all(char in "();<>|&" for char in token)
+
+
+def find_commit(tokens: list):
+    """The `-C` directories of the first `git commit` in `tokens`, or None when there is none.
+
+    `git` is matched by basename, so `/usr/bin/git` counts, and the script of
+    `bash -c` or `eval` is searched too, so rewording a commit cannot hide it.
+    """
     for index, token in enumerate(tokens):
-        if token != "git":
-            continue
+        name = os.path.basename(token)
         rest = tokens[index + 1 :]
-        while rest and rest[0].startswith("-"):
-            flag = rest.pop(0)
-            if flag in ("-C", "-c", "--git-dir", "--work-tree") and rest:
-                rest.pop(0)
+        if name in SHELLS:
+            while rest and rest[0].startswith("-") and not rest[0].startswith("--"):
+                flag = rest.pop(0)
+                if "c" in flag[1:] and rest:
+                    found = find_commit(shell_tokens(rest[0]))
+                    if found is not None:
+                        return found
+                    break
+            continue
+        if name == "eval":
+            script = []
+            for word in rest:
+                if is_operator(word):
+                    break
+                script.append(word)
+            found = find_commit(shell_tokens(" ".join(script)))
+            if found is not None:
+                return found
+            continue
+        if name != "git":
+            continue
+        dirs, rest = git_options(rest)
         if rest and rest[0] == "commit":
-            return True
-    return False
+            return dirs
+    return None
+
+
+def git_options(words: list):
+    """Skips git's global options in the words after `git`. Returns the `-C` directories and the words from the subcommand on."""
+    dirs = []
+    rest = list(words)
+    while rest and rest[0].startswith("-"):
+        flag = rest.pop(0)
+        if flag in ("-C", "-c", "--git-dir", "--work-tree") and rest:
+            value = rest.pop(0)
+            if flag == "-C":
+                dirs.append(value)
+    return dirs, rest
+
+
+def is_git_commit(command: str) -> bool:
+    """True for `git commit` anywhere in the command, allowing global options such as `git -C dir commit`."""
+    return find_commit(shell_tokens(command)) is not None
+
+
+def commit_checkout(event: dict, command: str) -> Path:
+    """The top level of the checkout a `git commit` in `command` lands in.
+
+    Starts from the event's `cwd`, the shell's real directory, falling back to
+    the project directory; then applies a leading `cd <dir> &&` or `cd <dir>;`
+    and any `git -C <dir>` on the commit, as the shell would. A directory that
+    is not a checkout, such as an unexpanded `cd "$PWD"`, falls back to the
+    shell's directory. Inside a worktree this differs from `CLAUDE_PROJECT_DIR`,
+    which always names the main checkout.
+    """
+    shell = Path(event.get("cwd") or project_dir())
+    tokens = shell_tokens(command)
+    directory = shell
+    if len(tokens) >= 3 and tokens[0] == "cd" and tokens[2] in ("&&", ";"):
+        directory = directory / os.path.expanduser(tokens[1])
+    for value in find_commit(tokens) or []:
+        directory = directory / os.path.expanduser(value)
+    for candidate in (directory, shell, project_dir()):
+        top = git(candidate, "rev-parse", "--show-toplevel")
+        if top:
+            return Path(top.strip())
+    return directory
+
+
+def same_repository(first: Path, second: Path) -> bool:
+    """True when both paths are checkouts of one repository: the same checkout, or a worktree and its main checkout."""
+    common = [git(path, "rev-parse", "--git-common-dir") for path in (first, second)]
+    if None in common:
+        return False
+    return (first / common[0].strip()).resolve() == (second / common[1].strip()).resolve()
 
 
 def commits_all_tracked(command: str) -> bool:

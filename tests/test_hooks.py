@@ -1,10 +1,16 @@
+import contextlib
+import io
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REPO / "hooks" / "scripts"
@@ -225,6 +231,274 @@ class TicketSyncTests(HookCase):
         self.git("add", "src/a.py")
         code, out, _ = run_hook("ticket_sync.py", bash_event("git commit -m x"), self.root)
         self.assertEqual((code, out), (0, ""))
+
+
+PY = shlex.quote(sys.executable)
+
+
+def feedback(code, output="", marker=None):
+    """A shell command that prints `output`, optionally touches `marker`, and exits with `code`."""
+    touch = f"open({marker!r}, 'w').close(); " if marker else ""
+    return f'{PY} -c "{touch}print({output!r}); raise SystemExit({code})"'
+
+
+class RedGuardTests(HookCase):
+    def test_blocks_commit_on_red_and_passes_on_green(self):
+        self.init_repo()
+        red = feedback(1, "boom")
+        self.configure(feedbackCommand=red)
+        (self.root / "app.py").write_text("x = 1\n")
+        self.git("add", "app.py")
+        code, out, err = run_hook("red_guard.py", bash_event("git commit -m x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn(red, err)
+        self.assertIn("Exit code: 1", err)
+        self.assertIn("boom", err)
+        self.assertIn("red", err)
+        self.configure(feedbackCommand=feedback(0, "fine"))
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+
+    def test_non_commits_and_unconfigured_repos_never_run_the_feedback_command(self):
+        self.init_repo()
+        marker = self.root / "ran"
+        (self.root / "app.py").write_text("x = 1\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        self.configure(feedbackCommand="")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        self.configure(feedbackCommand=feedback(1, marker=str(marker)))
+        self.assertEqual(run_hook("red_guard.py", bash_event("git status"), self.root), (0, "", ""))
+        self.assertFalse(marker.exists())
+
+    def configure_committed(self, **config):
+        self.configure(**config)
+        self.git("add", ".claude")
+        self.git("commit", "-q", "-m", "config")
+
+    def test_only_workflow_documents_and_tests_skip_the_check(self):
+        self.init_repo()
+        marker = self.root / "ran"
+        self.configure_committed(feedbackCommand=feedback(1, "boom", marker=str(marker)), testGlobs=["tests/"])
+        (self.root / "docs" / "changes" / "0009-x").mkdir(parents=True)
+        (self.root / "docs" / "changes" / "0009-x" / "intent.md").write_text("# Intent\n")
+        (self.root / "GLOSSARY.md").write_text("# Glossary\n")
+        (self.root / "tests").mkdir()
+        (self.root / "tests" / "test_x.py").write_text("assert False\n")
+        self.git("add", "docs", "GLOSSARY.md")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        self.assertFalse(marker.exists())
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event("git commit -m x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertTrue(marker.exists())
+        self.assertIn("boom", err)
+
+    def test_staged_and_unstaged_source_changes_both_count(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1))
+        (self.root / "README.md").write_text("changed\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -am x"), self.root)[0], 2)
+        self.git("add", "README.md")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root)[0], 2)
+
+    def test_paths_with_spaces_and_nested_workflow_names_are_classified(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1), testGlobs=["tests/"])
+        (self.root / "docs").mkdir()
+        (self.root / "docs" / "my notes.md").write_text("x\n")
+        (self.root / "REVIEW.md").write_text("x\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        (self.root / "lib").mkdir()
+        (self.root / "lib" / "GLOSSARY.md").write_text("x\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root)[0], 2)
+        (self.root / "lib" / "GLOSSARY.md").unlink()
+        (self.root / "my app.py").write_text("x = 1\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root)[0], 2)
+
+    def test_renaming_source_into_docs_still_runs_the_check(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1))
+        (self.root / "docs").mkdir()
+        self.git("mv", "README.md", "docs/README.md")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root)[0], 2)
+
+    def test_checks_the_worktree_the_commit_lands_in(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(0))
+        (self.root / ".git" / "info" / "exclude").write_text(".claude/worktrees/\n")
+        worktree = self.root / ".claude" / "worktrees" / "w1"
+        self.git("worktree", "add", "-q", str(worktree), "-b", "w1")
+        (worktree / ".claude" / "toolkit.json").write_text(json.dumps({"feedbackCommand": feedback(1, "worktree is red")}))
+        (self.root / "app.py").write_text("x = 1\n")
+        self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""))
+        in_worktree = {**bash_event("git commit -m x"), "cwd": str(worktree)}
+        for event in (
+            in_worktree,
+            bash_event("git -C .claude/worktrees/w1 commit -m x"),
+            bash_event(f"git -C {worktree} commit -m x"),
+            bash_event("cd .claude/worktrees/w1 && git add -A && git commit -m x"),
+            bash_event("cd .claude/worktrees/w1; git commit -am x"),
+        ):
+            code, _, err = run_hook("red_guard.py", event, self.root)
+            self.assertEqual(code, 2, event)
+            self.assertIn("worktree is red", err)
+
+    def test_commits_in_another_repository_never_run_its_feedback_command(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(0))
+        marker = self.root / "ran"
+        foreign = self.root / "vendor" / "lib"
+        foreign.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q"], cwd=foreign, check=True)
+        (foreign / ".claude").mkdir()
+        (foreign / ".claude" / "toolkit.json").write_text(json.dumps({"feedbackCommand": feedback(1, "foreign", marker=str(marker))}))
+        (foreign / "app.py").write_text("x = 1\n")
+        for event in (
+            bash_event("cd vendor/lib && git commit -am x"),
+            bash_event("git -C vendor/lib commit -am x"),
+            {**bash_event("git commit -am x"), "cwd": str(foreign)},
+        ):
+            self.assertEqual(run_hook("red_guard.py", event, self.root), (0, "", ""), event)
+        self.assertFalse(marker.exists())
+
+    def test_reworded_commits_are_recognised(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1, "boom"))
+        (self.root / "app.py").write_text("x = 1\n")
+        for command in (
+            "git add -A;git commit -m x",
+            "true&&git commit -m x",
+            "(git commit -m x)",
+            f"{shutil.which('git')} commit -m x",
+            'git -c user.name="A B" commit -m x',
+            f'git -C "{self.root}" commit -m x',
+            'bash -c "git add -A && git commit -m x"',
+            "eval 'git commit -m x'",
+        ):
+            code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("boom", err)
+        for command in ('echo "git commit"', "git log --grep commit", "git -c commit.gpgsign=false status"):
+            self.assertEqual(run_hook("red_guard.py", bash_event(command), self.root), (0, "", ""), command)
+
+    def test_a_command_that_can_change_files_before_its_commit_always_runs_the_check(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1, "boom"), testGlobs=["tests/"])
+        for command in ("echo 1 >> app.py && git commit -am x", "git commit --amend -m y", "git stash pop && git commit -am x"):
+            self.assertEqual(run_hook("red_guard.py", bash_event(command), self.root)[0], 2, command)
+        (self.root / "tests").mkdir()
+        (self.root / "tests" / "test_x.py").write_text("assert False\n")
+        for command in ("sed -i '' s/0/1/ app.py && git commit -am x", "cat README.md > app.py && git commit -am x"):
+            self.assertEqual(run_hook("red_guard.py", bash_event(command), self.root)[0], 2, command)
+        for command in ("git add -A && git commit -m x", "cd . && git status && git -C . add tests && git commit -m x", "git add -A && git commit -m x 2>&1 | tail -5", "git commit -am x > /dev/null"):
+            self.assertEqual(run_hook("red_guard.py", bash_event(command), self.root), (0, "", ""), command)
+
+    def test_an_unparsable_directory_falls_back_to_the_shell_directory(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1, "boom"))
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event('cd "$PWD" && git commit -am x'), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("boom", err)
+
+    def test_empty_test_globs_use_the_default_test_patterns(self):
+        self.init_repo()
+        marker = self.root / "ran"
+        for config in ({"testGlobs": []}, {}):
+            self.configure_committed(feedbackCommand=feedback(1, marker=str(marker)), **config)
+            (self.root / "tests").mkdir(exist_ok=True)
+            (self.root / "tests" / "test_bug.py").write_text("assert False\n")
+            self.assertEqual(run_hook("red_guard.py", bash_event("git commit -m x"), self.root), (0, "", ""), config)
+            self.assertFalse(marker.exists())
+
+    def test_says_so_when_the_feedback_command_prints_nothing(self):
+        self.init_repo()
+        self.configure(feedbackCommand="exit 1")
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event("git commit -m x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("No output.", err)
+        self.assertNotIn("Last 0 lines", err)
+
+    def test_feedback_past_the_limit_is_stopped_with_its_children(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import red_guard
+
+        started = time.monotonic()
+        code, _ = red_guard.run_feedback("sleep 30 & echo $! > pid; wait", self.root, 1)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertIsNone(code)
+        child = int((self.root / "pid").read_text())
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            self.fail(f"child {child} outlived the feedback command's limit")
+        reason = red_guard.timeout_reason("make check", red_guard.LIMIT_SECONDS, "")
+        self.assertIn("570 seconds", reason)
+        self.assertIn("red", reason)
+
+    def test_a_feedback_command_past_the_limit_blocks_the_commit(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import red_guard
+
+        self.init_repo()
+        self.configure(feedbackCommand="make check")
+        (self.root / "app.py").write_text("x = 1\n")
+        stderr = io.StringIO()
+        with mock.patch.object(red_guard, "run_feedback", return_value=(None, "")), mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": str(self.root)}), contextlib.redirect_stderr(stderr):
+            code = red_guard.guard({**bash_event("git commit -m x"), "cwd": str(self.root)}, "git commit -m x")
+        self.assertEqual(code, 2)
+        self.assertIn("570 seconds", stderr.getvalue())
+
+    def test_a_green_command_that_leaves_a_background_child_returns_at_once(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import red_guard
+
+        started = time.monotonic()
+        code, output = red_guard.run_feedback("(sleep 30 & echo $! > pid); echo ok", self.root, 20)
+        self.addCleanup(subprocess.run, ["kill", "-9", (self.root / "pid").read_text().strip()], capture_output=True)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertEqual(code, 0)
+        self.assertIn("ok", output)
+
+    def test_hook_entry_fails_closed_and_outlasts_the_feedback_limit(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import red_guard
+
+        config = json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        entries = [hook for group in config["hooks"]["PreToolUse"] for hook in group["hooks"] if "red_guard.py" in hook["command"]]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry.get("onFailure"), "block")
+        self.assertNotIn("if", entry)
+        self.assertGreater(entry.get("timeout", 0), red_guard.LIMIT_SECONDS)
+
+    def test_a_fault_blocks_a_commit_readably_and_never_blocks_other_commands(self):
+        self.init_repo()
+        self.configure(feedbackCommand=123)
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event("git commit -m x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("red-guard", err)
+        self.assertNotIn("Traceback", err)
+        result = subprocess.run([sys.executable, str(SCRIPTS / "red_guard.py")], input="not json", capture_output=True, text=True, cwd=self.root, check=False)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+
+    def test_quotes_only_the_last_forty_lines(self):
+        self.init_repo()
+        self.configure(feedbackCommand=f"{PY} -c \"print('\\n'.join('line %d' % i for i in range(100))); raise SystemExit(3)\"")
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event("git commit -m x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("Exit code: 3", err)
+        self.assertIn("line 99", err)
+        self.assertIn("line 60\n", err)
+        self.assertNotIn("line 59\n", err)
 
 
 class FormatLintTests(HookCase):

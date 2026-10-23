@@ -4,6 +4,25 @@ All notable changes to this plugin are recorded here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-22
+
+No commit lands while the feedback command is red. The rule was text the executor could miss, and once did; it is now a hook. This is change 0002.
+
+### Added
+
+- `red-guard` hook: before a `git commit` Claude attempts, however the command is worded, runs `feedbackCommand` in the checkout the commit lands in, worktrees included, and blocks the commit while it is red, quoting the last 40 lines of output. Only the project's own checkouts are checked; a commit in another repository never runs that repository's command. A commit that changes only workflow documents and test files skips the check when nothing else in the command can change a file first, so `fix-bug` can commit its failing regression test. A feedback command that does not finish in 570 seconds counts as red, its whole process group is killed, and the hook entry fails closed. Proven in live headless sessions, including under `bypassPermissions` and from a worktree.
+- `_common.commit_checkout`: resolves the checkout a commit lands in from the event's `cwd`, a leading `cd`, and `git -C`. `_common.is_git_commit` now reads the command with a shell tokeniser, so `secret-guard` and `ticket-sync` also recognise commits written as `a;git commit`, `/usr/bin/git commit`, `bash -c "git commit"` or `eval 'git commit'`.
+- Glossary terms: red, workflow document.
+- A component test that every hook is linked in PHILOSOPHY's "Enforced by" column, and a test pinning `red-guard`'s hook entry.
+
+### Changed
+
+- `implementer`, `verify` and `fix-bug` name `red-guard` where they state the rule; `fix-bug` says why its failing-test commit passes.
+- `implement` ends by pointing at `/toolkit:review` before the pull request, and `fix-bug` reports the same next step and hands an incident off to `/toolkit:postmortem`.
+- `fix-bug` stops at the start when source files have uncommitted changes, which would block its failing-test commit.
+- `lock-tests` takes its default test patterns from `_common.py`, shared with `red-guard`.
+- `PHILOSOPHY.md` links `red-guard` under "Skills advise, hooks enforce" and `ticket-sync`, which was missing, under "Artifacts are tool-agnostic".
+
 ## [0.4.0] - 2026-10-22
 
 Phase 3: maintain and hardening. The loop closes: findings from running software and incidents re-enter the workflow as intents, lessons become eval cases, policies become skills, and the plugin tests itself. This completes change 0001.

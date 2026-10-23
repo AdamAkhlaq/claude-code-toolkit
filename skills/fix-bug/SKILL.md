@@ -17,7 +17,7 @@ Templates are at `${CLAUDE_PLUGIN_ROOT}/templates/`. The graph tool is `${CLAUDE
 
 ## Steps
 
-1. **Preconditions.** `.claude/toolkit.json` exists with a `feedbackCommand`; without it, stop and point at `/toolkit:setup`. Note the branch and whether the tree is clean. If `.claude/.tests-locked` already exists, another fix is in progress: say so and stop.
+1. **Preconditions.** `.claude/toolkit.json` exists with a `feedbackCommand`; without it, stop and point at `/toolkit:setup`. Note the branch and whether the tree is clean. If any source file has uncommitted changes, stop and ask the user to commit or stash them: the `red-guard` hook blocks step 7's commit on a red suite while any source file is changed. If `.claude/.tests-locked` already exists, another fix is in progress: say so and stop.
 
 2. **Keep the report verbatim.** Quote it as it arrived: the user's words, the stack trace, the issue text, the failing test's output. Do not tidy it.
 
@@ -29,7 +29,7 @@ Templates are at `${CLAUDE_PLUGIN_ROOT}/templates/`. The graph tool is `${CLAUDE
 
 6. **Record the change.** Run `python3 "${CLAUDE_PLUGIN_ROOT}/bin/toolkit-graph" new fix-<slug>`. Write `intent.md` from `templates/intent.md` with the report as Origin, the reproduction as Problem, and the outcome "the regression test passes and the reported route behaves as expected". Write one ticket `tickets/T1-<slug>.md` whose `proves` is the regression test and whose `files` are the test and the files you expect to change. A bug fix needs no spec or plan; note that in the intent.
 
-7. **Commit the failing test and lock.** Stage the test, the intent and the ticket, and leave every source file unchanged: the `red-guard` hook lets this commit through on a red suite only because nothing but test files and workflow documents have changed, and blocks it while any source file in the working tree is changed, staged or not. Commit as `test(<scope>): reproduce <the bug>` with the trailers `Change: <NNNN>` and `Ticket: <NNNN>-T1`, after the user's go-ahead. Then create `.claude/.tests-locked`. From here the `lock-tests` hook blocks every edit to a test file, so the fix cannot pass by changing the test.
+7. **Commit the failing test and lock.** Stage the test, the intent and the ticket, and leave every source file unchanged: the `red-guard` hook lets this commit through on a red suite only because nothing but test files and workflow documents have changed, and blocks it while any source file in the working tree is changed, staged or not. Run the commit as `git add <paths> && git commit ...` with nothing else in the call: a command that could change a file first, such as a `sed` or a redirect into a file, makes the hook run the check. Commit as `test(<scope>): reproduce <the bug>` with the trailers `Change: <NNNN>` and `Ticket: <NNNN>-T1`, after the user's go-ahead. Then create `.claude/.tests-locked`. From here the `lock-tests` hook blocks every edit to a test file, so the fix cannot pass by changing the test.
 
 8. **Fix.** Set the ticket to `in-progress`. Change the code, as little of it as makes the test pass and the reported route behave. Resist fixing other things you notice; record them in the report. If, while fixing, you become convinced the test is wrong, say so with the reason and ask the user to unlock with `rm .claude/.tests-locked`; do not work around the hook.
 
@@ -39,7 +39,7 @@ Templates are at `${CLAUDE_PLUGIN_ROOT}/templates/`. The graph tool is `${CLAUDE
 
 11. **Learn.** If the root cause is a class of mistake that has come up before in this repo, in a review or a correction, apply the `toolkit:claude-md` discipline. If it caused an incident, hand off to `/toolkit:postmortem`, which records it and its follow-ups.
 
-12. **Report.** The root cause in a sentence, the test that guards it, the evidence, and the next step: push and open a pull request, or `/toolkit:review` once it exists.
+12. **Report.** The root cause in a sentence, the test that guards it, the evidence, and the next step: `/toolkit:review <NNNN>`, then push and open a pull request.
 
 ## Rules
 

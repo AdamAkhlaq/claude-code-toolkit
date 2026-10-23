@@ -55,3 +55,7 @@ No ticket is a one-way door. Everything lands on a local branch; the tag, the on
 - **An environment variable to shorten the time limit in tests.** An undocumented knob anyone could set in production; the imported `run_feedback` seam needs none.
 
 No ADR: nothing here is a one-way door.
+
+## Amendment 2026-10-23: review of 82106a2
+
+Fixes from `review.md`, recorded against the spec's amendment of the same date. The entry in `hooks/hooks.json` drops `"if": "Bash(git *)"`. `_common.py` gains `shell_tokens` (a `shlex` tokeniser that splits control operators), `find_commit`, `git_options` and `same_repository`, and holds `DEFAULT_TEST_GLOBS` for both `lock-tests` and `red-guard`. Step 3's `commit_checkout` composes `cwd`, the leading `cd` and `git -C` as the shell does and falls back when the result is not a checkout. `run_feedback` writes output to a temporary file and waits for the process, not the pipe, so a background child left by a green command no longer holds the hook to the limit.

@@ -151,6 +151,23 @@ class DeployGateTests(HookCase):
         self.assertIn("`RELEASE_AUTHORIZED`", readme)
         self.assertIn("`.claude/.release-authorized`", readme)
 
+    def test_a_gated_command_is_caught_anywhere_in_the_line(self):
+        self.configure(gatedCommands=["^git tag ", "^gh release "])
+        for command in (
+            "cd . && git tag v2",
+            "true; git tag v3",
+            "/usr/bin/git tag v4",
+            'bash -c "git tag v5"',
+            "git fetch -q && gh release create v6",
+            "git fetch -q\ngit tag v7",
+            "cat > notes.md <<'EOF'\nnotes\nEOF\ngit tag v8",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err)
+        for command in ('echo "git tag v1"', "git log --grep 'git tag '", 'echo "notes\ngit tag v1"', "cat > notes.md <<'EOF'\ngit tag v1 is next\n| `/usr/bin/git tag v2` |\nEOF"):
+            self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+
     def test_non_matching_and_invalid_patterns(self):
         self.configure(gatedCommands=["[unclosed", "terraform apply"])
         code, _, err = run_hook("deploy_gate.py", bash_event("terraform plan"), self.root)

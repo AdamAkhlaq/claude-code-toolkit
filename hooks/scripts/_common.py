@@ -259,13 +259,11 @@ def find_commit(tokens: list):
         name = os.path.basename(token)
         rest = tokens[index + 1 :]
         if name in SHELLS:
-            while rest and rest[0].startswith("-") and not rest[0].startswith("--"):
-                flag = rest.pop(0)
-                if "c" in flag[1:] and rest:
-                    found = find_commit(shell_tokens(rest[0]))
-                    if found is not None:
-                        return found
-                    break
+            script = shell_script(rest)
+            if script is not None:
+                found = find_commit(shell_tokens(script))
+                if found is not None:
+                    return found
             continue
         if name == "eval":
             script = []
@@ -282,6 +280,21 @@ def find_commit(tokens: list):
         dirs, rest = git_options(rest)
         if rest and rest[0] == "commit":
             return dirs
+    return None
+
+
+def shell_script(words: list):
+    """The script a shell runs with `-c`, from the words after the shell's name, or None.
+
+    The first short option cluster holding `c` marks it, so options before it,
+    long ones and option arguments included, cannot hide it: `bash --norc -c`,
+    `bash -o pipefail -c`, `sh -lc`.
+    """
+    for index, word in enumerate(words[:-1]):
+        if is_operator(word):
+            return None
+        if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", word):
+            return words[index + 1]
     return None
 
 

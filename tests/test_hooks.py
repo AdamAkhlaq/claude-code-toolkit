@@ -206,7 +206,7 @@ class DeployGateTests(HookCase):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
             self.assertIn("release authorisation", err)
-        for command in ('echo "git tag v1"', 'git log --grep "git tag "', 'git commit -m "add git tag support"'):
+        for command in ('echo "git tag v1"', 'git log --grep "git tag "', 'git commit -m "add git tag support"', "echo '$(git tag v1)'", "echo '`git tag v1`'", 'echo "\\$(git tag v1)"', "echo $'$(git tag v1)'"):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
 
     def test_non_matching_and_invalid_patterns(self):

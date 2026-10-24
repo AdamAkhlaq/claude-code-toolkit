@@ -237,6 +237,10 @@ class DeployGateTests(HookCase):
         self.configure(gatedCommands=["^npm publish|^gh release "])
         code, _, err = run_hook("deploy_gate.py", bash_event("X=1 gh release create v1"), self.root)
         self.assertEqual(code, 2)
+        for pattern in ["(?i)^gh release ", r"\Agh release ", "^(?:npm publish|gh release )"]:
+            self.configure(gatedCommands=[pattern])
+            code, _, err = run_hook("deploy_gate.py", bash_event("sudo /usr/bin/gh release create v1"), self.root)
+            self.assertEqual(code, 2, pattern)
         self.configure(gatedCommands=["^git tag "])
         code, _, err = run_hook("deploy_gate.py", bash_event("echo " + "$(" * 2000 + "git tag v1" + ")" * 2000), self.root)
         self.assertEqual(code, 2)

@@ -12,7 +12,7 @@ files:
     docs/changes/0003-fix-deploy-gate-bypass/intent.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_gate_never_fails_open_on_a_long_or_nested_call: with gatedCommands ["^git tag ", "^git push .*--force"], deploy_gate.py exits 2 on `env git push origin` followed by 70 refs and `--force`, exits 2 within 5 seconds on 40 `eval` words before `git tag v1`, exits 2 with a message saying the call is too long to read on a call of 200000 words, and exits 0 silently within 5 seconds on `env git add` followed by 5000 paths; and the `deploy_gate.py` entry in hooks/hooks.json has a timeout and `"onFailure": "block"`'
-status: reopened
+status: in-progress
 executed_by: single
 branch: ticket/0003-T6
 ---
@@ -85,3 +85,43 @@ Regression found by probing the hook at this branch against the hook at `change/
 Also found, present before this branch too, so not a regression: `echo` followed by 2000 nested `$(` around `git tag v1` crashes the hook with `RecursionError`, exit 1, on both branches; whether `"onFailure": "block"` covers exit 1 as well as a timeout was not checked. A single 5 MB word followed by `&& git tag v1` runs past 60 s, because the budget counts words, not characters; the 30 s timeout with `"onFailure": "block"` turns that into a block, but the hook does not block on its own budget first, as the Context asks.
 
 Reopen reason: a gated pattern with `^` on more than one alternative, such as `^git tag |^gh release `, now fails open behind an assignment, a wrapper or a path (`X=1 gh release create v1` exits 0, and exited 2 before this branch); anchor every `^` at the program word, or fall back to matching that pattern against a line that starts at the word, and add that case to the proving test.
+
+### Evidence 2026-10-24 17:20 (retry)
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+..............................................................................
+----------------------------------------------------------------------
+Ran 78 tests in 12.448s
+
+OK
+```
+
+The reopen's cases were added to the proving test and committed failing before the code changed (fda616c, 9e780b6, 919b934). Probed one at a time against the hook from 0bb6058, then after the fix:
+
+| Case                                                       | Before                      | After                               |
+| ---------------------------------------------------------- | --------------------------- | ----------------------------------- |
+| `^npm publish\|^gh release ` on `X=1 gh release create v1` | exit 0                      | exit 2 in 0.0 s                     |
+| `\Agh release ` on `sudo /usr/bin/gh release create v1`    | exit 0                      | exit 2                              |
+| `echo` and 2000 nested `$(` around `git tag v1`            | exit 1, `RecursionError`    | exit 2 in 0.6 s, "too long to read" |
+| one 5 MB word, then `&& git tag v1`                        | still running after 15 s    | exit 2 in 0.1 s, "too long to read" |
+| 99000 words, then `&& git status`                          | exit 0 in 7.8 s (quadratic) | exit 0 in 0.3 s                     |
+
+`(?i)^gh release ` and `^(?:npm publish|gh release )` already blocked and still do.
+
+The fix: `without_anchors` takes out every `^` and `\A` outside a character class and not escaped, and the result is matched at each program word, so each alternative anchors there; taking an anchor out only widens where a pattern may start, so the gate errs toward blocking. Each call is charged its characters before it is parsed, against a budget of 1,000,000 alongside the 100,000 words, so a huge word or deep nesting stops before `shell_source`, `shlex` or the regexes run over it. A `RecursionError` is read as too long to read, and any other error while reading blocks with its type named, so the hook never exits 1, which would let the call through. The words after a program word are copied only for `git`, `eval` or a shell, which made a long simple command linear. README and CHANGELOG name the character budget, nesting and the anchoring of every alternative. `claude plugin validate .` passes, with the three warnings it gave before this branch (CLAUDE.md at the root, no icon, an untracked `.DS_Store`).
+
+Adversarial shapes, all exit 2 within 1.3 s unless noted: 400000 nested `$(`, 990000 characters of `$(`, 200000 backticks, 500000 quote characters, 49000 words on one line, 450000 paths after `git add` (over the character budget, blocked as too long). 30000 lines of `cat <<E` before `git tag v1` exits 0, correctly, since the `git tag` is heredoc body text; `bash -c` repeated 30000 times before `'git tag v1'` exits 0 in 0.3 s, correctly, since `-c` gets the script `bash`.
+
+Live check, 2026-10-24: a headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` session in a throwaway repo with `"gatedCommands": ["^npm publish|^git tag ", "\\Agit push .*--force"]`, no `RELEASE_AUTHORIZED` and no marker, one Bash call per command.
+
+| Command                                                               | Result                                                                                                                 |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `X=1 git tag v1`                                                      | blocked: "Blocked: 'X=1 git tag v1' matches gated command pattern '^npm publish\|^git tag ' in .claude/toolkit.json."  |
+| `sudo -n true 2>/dev/null; env /usr/bin/git push origin main --force` | blocked: "... matches gated command pattern '\Agit push .*--force' in .claude/toolkit.json."                           |
+| `echo` and 2000 nested `$(` around `git tag v3`                       | never reached the hook: the session's safety classifier stopped the tool call first. Covered by the proving test only. |
+| `git status --short`                                                  | ran                                                                                                                    |
+
+`git tag` in the repo afterwards listed nothing.

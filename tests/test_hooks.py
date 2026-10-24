@@ -249,6 +249,10 @@ class DeployGateTests(HookCase):
         code, _, err = run_hook("deploy_gate.py", bash_event("x" * 5_000_000 + " && git tag v1"), self.root)
         self.assertEqual(code, 2)
         self.assertLess(time.monotonic() - started, 5)
+        started = time.monotonic()
+        code, out, err = run_hook("deploy_gate.py", bash_event("x " * 99_000 + "&& git status"), self.root)
+        self.assertEqual((code, out, err), (0, "", ""))
+        self.assertLess(time.monotonic() - started, 5)
         config = json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
         entries = [hook for group in config["hooks"]["PreToolUse"] for hook in group["hooks"] if "deploy_gate.py" in hook["command"]]
         self.assertEqual(len(entries), 1)

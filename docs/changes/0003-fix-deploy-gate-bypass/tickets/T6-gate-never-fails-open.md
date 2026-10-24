@@ -12,7 +12,7 @@ files:
     docs/changes/0003-fix-deploy-gate-bypass/intent.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_gate_never_fails_open_on_a_long_or_nested_call: with gatedCommands ["^git tag ", "^git push .*--force"], deploy_gate.py exits 2 on `env git push origin` followed by 70 refs and `--force`, exits 2 within 5 seconds on 40 `eval` words before `git tag v1`, exits 2 with a message saying the call is too long to read on a call of 200000 words, and exits 0 silently within 5 seconds on `env git add` followed by 5000 paths; and the `deploy_gate.py` entry in hooks/hooks.json has a timeout and `"onFailure": "block"`'
-status: in-progress
+status: reopened
 executed_by: single
 branch: ticket/0003-T6
 ---
@@ -125,3 +125,28 @@ Live check, 2026-10-24: a headless `claude --plugin-dir <this checkout> -p --per
 | `git status --short`                                                  | ran                                                                                                                    |
 
 `git tag` in the repo afterwards listed nothing.
+
+### Verifier 2026-10-24 16:52
+
+Verdict: reopen
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. Added on this branch (8c4f8f9, extended in fda616c, 9e780b6, 919b934). It runs the hook as a subprocess and reads `hooks/hooks.json`. In scratch worktrees with this branch's `tests/test_hooks.py`, it fails against the hook from `change/0003-fix-deploy-gate-bypass` and against the hook from 0bb6058, both with `AssertionError: 0 != 2`.
+3. proving test run: exit 0, `Ran 1 test in 1.610s OK` (`python3 -m unittest tests.test_hooks.DeployGateTests.test_the_gate_never_fails_open_on_a_long_or_nested_call`)
+4. feedback command: exit 0, `Ran 78 tests in 10.883s OK` (`python3 -m unittest discover -s tests`)
+5. acceptance: 4 of 4 checked, none failed on its wording. The proving test passes (check 3). Every other test passes, and the test diff only adds lines. The README and `intent.md` say what the Context says (read in the diff). The CHANGELOG `[Unreleased]` entry says a call too long to read is blocked and that the hook entry has a timeout with `"onFailure": "block"`.
+6. scope: ok (CHANGELOG.md, README.md, intent.md, hooks/hooks.json, hooks/scripts/deploy_gate.py, tests/test_hooks.py, plus the ticket)
+7. tests intact: ok (no deleted lines, no skip or expected-failure markers)
+
+I probed this branch's hook and the hook from `change/0003-fix-deploy-gate-bypass` with `gatedCommands: ["^git tag "]` and found a regression. `readings` keeps a single `read_into` flag for both `eval` and shells, and it sets that flag on any word whose basename is a shell, even when `shell_script` returns None. An assignment whose value is a shell path uses up the flag, so the `eval` after it is never read. These cases exit 0 on this branch and 2 on the integration branch:
+
+- `SHELL=/bin/bash eval 'git tag v1'`
+- `PAGER=/bin/sh eval "git tag v1"`
+- `SHELL=/bin/bash command eval 'git tag v1'`
+
+bash runs the quoted script in each of these. `sudo -u sh eval '...'` and `env -u bash eval '...'` also exit 0, though there `eval` is not a binary, so nothing runs. Unquoted `SHELL=/bin/bash eval git tag v1` and `SHELL=/bin/zsh bash -c '...'` still block.
+
+The rest of the probe found no other regressions. The cases checked include multi-alternative and `\A` anchors, `(?m)`, `[^...]`, wrappers, keywords, subshells, substitutions, quoted mentions, 5000 nested `eval` (0.5 s, exit 2; the integration hook crashed with exit 1 after 18.9 s), and large heredoc file writes, which were not falsely blocked. One limit, the same on both branches: a single word just under the character budget takes about 8.5 s here (250k characters 1.0 s, 500k 2.7 s, 999k 8.6 s), which grows faster than linearly. That is under the 30 s timeout, and the timeout blocks anyway, but on a slower machine it leaves less room than "well before that timeout".
+
+Reopen reason: a shell-named word earlier in a simple command now hides a later quoted `eval` (`SHELL=/bin/bash eval 'git tag v1'` exits 0 on this branch and exited 2 before it). Set the read-into flag only when a script was actually read, or keep separate flags for `eval` and for shells, and add this case to the proving test.

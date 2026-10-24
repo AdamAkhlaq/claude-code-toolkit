@@ -134,7 +134,7 @@ def git(root: Path, *args: str):
     return result.stdout if result.returncode == 0 else None
 
 
-SHELLS = ("sh", "bash", "zsh", "dash")
+SHELLS = ("sh", "bash", "zsh", "dash", "ksh", "mksh", "csh", "tcsh", "fish")
 
 
 OPERATOR_CHARS = "();<>|&\n`"
@@ -146,13 +146,13 @@ def shell_tokens(command: str) -> list:
     """The words of a shell command with quotes removed, and its control operators as separate tokens: `a&&b;(c)` gives `a && b ; ( c )`.
 
     A newline outside quotes separates commands as `;` does, so it is kept as
-    an operator; a backslash before it continues the line instead. Comments
-    and heredoc bodies are not run as commands, so they are left out. shlex
-    joins adjacent operators into one token, `;>` or `&&>`, so each run is
-    split back into the operators it holds. A command shlex cannot read, such
-    as `$'it\\'s'`, is split at operators and whitespace instead.
+    an operator. Comments, heredoc bodies and backslash-newlines are dropped
+    first, by `shell_source`. shlex joins adjacent operators into one token,
+    `;>` or `&&>`, so each run is split back into the operators it holds. A
+    command shlex cannot read, such as `$'it\\'s'`, is split at operators and
+    whitespace outside quotes instead, each quoted span kept whole.
     """
-    script = shell_source(command).replace("\\\n", " ")
+    script = shell_source(command)
     lexer = shlex.shlex(script, posix=True, punctuation_chars=OPERATOR_CHARS)
     lexer.whitespace_split = True
     lexer.whitespace = " \t\r"
@@ -160,29 +160,45 @@ def shell_tokens(command: str) -> list:
     try:
         tokens = list(lexer)
     except ValueError:
-        tokens = re.findall(r"[();<>|&`\n]+|[^\s();<>|&`]+", script)
+        tokens = [unquote(token) for token in re.findall(FALLBACK_TOKEN, script)]
     return [part for token in tokens for part in (OPERATOR.findall(token) if is_operator(token) else [token])]
+
+
+QUOTED = r"'[^']*'|\"(?:\\.|[^\"\\])*\""
+FALLBACK_TOKEN = re.compile(rf"[();<>|&`\n]+|(?:{QUOTED}|[^\s();<>|&`'\"])+|['\"]")
+
+
+def unquote(token: str) -> str:
+    return re.sub(QUOTED, lambda match: match.group(0)[1:-1], token)
 
 
 HEREDOC = re.compile(r"<<(-?)[ \t]*\\?(['\"]?)([\w.-]+)\2")
 
 
 def shell_source(command: str) -> str:
-    """`command` without what the shell does not run as commands: `#` comments, and the body of each heredoc.
+    """`command` without what the shell does not run as commands: `#` comments, the body of each heredoc, and each backslash-newline, which the shell deletes.
 
-    A `<<` inside `((...))` or `$((...))` is a shift, not a heredoc. A heredoc
-    whose closing line never comes keeps its body, so a missing delimiter
-    cannot hide the lines after it.
+    A `#` starts a comment only at the start of a word, outside quotes and
+    `${...}`, so `a\\ #b` and `${x/ #/}` do not. A `<<` inside `((...))`,
+    `$((...))` or `$[...]` is a shift, not a heredoc. A heredoc whose closing
+    line never comes keeps its body, so a missing delimiter cannot hide the
+    lines after it.
     """
     kept = []
     pending = []
     quote = ""
     arithmetic = 0
+    brackets = 0
+    braces = 0
+    at_word_start = True
     index = 0
     while index < len(command):
         char = command[index]
+        starts_word = at_word_start
+        at_word_start = False
         if char == "\\" and quote != "'":
-            kept.append(command[index : index + 2])
+            if command[index + 1 : index + 2] != "\n":
+                kept.append(command[index : index + 2])
             index += 2
             continue
         if quote:
@@ -195,32 +211,49 @@ def shell_source(command: str) -> str:
             continue
         elif char in "'\"":
             quote = char
-        elif char == "#" and (index == 0 or command[index - 1] in WORD_START):
+        elif char == "#" and starts_word and not braces:
             end = command.find("\n", index)
             index = len(command) if end == -1 else end
             continue
+        elif command.startswith("${", index):
+            braces += 1
+            kept.append("${")
+            index += 2
+            continue
+        elif braces and char == "}":
+            braces -= 1
         elif command.startswith("((", index):
             arithmetic += 2
             kept.append("((")
             index += 2
+            at_word_start = True
             continue
         elif arithmetic and char in "()":
             arithmetic += 1 if char == "(" else -1
+        elif command.startswith("$[", index):
+            brackets += 1
+            kept.append("$[")
+            index += 2
+            continue
+        elif brackets and char in "[]":
+            brackets += 1 if char == "[" else -1
         elif char == "\n" and pending:
             kept.append(char)
             index = skip_heredoc_bodies(command, index + 1, pending)
             pending = []
+            at_word_start = True
             continue
         elif command.startswith("<<<", index):
             kept.append("<<<")
             index += 3
             continue
-        elif char == "<" and not arithmetic and (match := HEREDOC.match(command, index)):
+        elif char == "<" and not arithmetic and not brackets and (match := HEREDOC.match(command, index)):
             pending.append((match.group(1) == "-", match.group(3)))
             kept.append(match.group(0))
             index = match.end()
             continue
         kept.append(char)
+        at_word_start = not quote and char in WORD_START
         index += 1
     return "".join(kept)
 
@@ -288,13 +321,22 @@ def shell_script(words: list):
 
     The first short option cluster holding `c` marks it, so options before it,
     long ones and option arguments included, cannot hide it: `bash --norc -c`,
-    `bash -o pipefail -c`, `sh -lc`.
+    `bash -o pipefail -c`, `sh -lc`. The shell reads options after it too, so
+    the script is the first word after those and after a `--`: `bash -c -e`,
+    `bash -c -- 'script'`.
     """
-    for index, word in enumerate(words[:-1]):
+    for index, word in enumerate(words):
         if is_operator(word):
             return None
         if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", word):
-            return words[index + 1]
+            rest = words[index + 1 :]
+            while rest and rest[0][:1] in ("-", "+") and not is_operator(rest[0]):
+                option = rest.pop(0)
+                if option == "--":
+                    break
+                if option in ("-o", "+o", "-O", "+O") and rest:
+                    rest.pop(0)
+            return rest[0] if rest and not is_operator(rest[0]) else None
     return None
 
 

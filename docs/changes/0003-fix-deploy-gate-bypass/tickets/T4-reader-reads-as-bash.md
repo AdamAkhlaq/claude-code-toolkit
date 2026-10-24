@@ -32,3 +32,30 @@ The same reader feeds `red-guard` through `find_commit` and `only_bookkeeping`. 
 - `CHANGELOG.md`'s `[Unreleased]` tokeniser entry covers the escaped and `${...}` `#`, `$[...]`, backslash-newline, options after `-c`, the added shells and the fallback.
 
 ## Evidence
+
+### Evidence 2026-10-24 16:12
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+............................................................................
+----------------------------------------------------------------------
+Ran 76 tests in 8.982s
+
+OK
+```
+
+Each case was first run in bash with `git` and `ksh` stubbed as shell functions: bash ran `git tag` for all seven gated cases and not for the quoted mention, and the gate at `2d03902` let all seven through and blocked the mention. The proving test and `RedGuardTests.test_an_option_after_c_does_not_hide_the_commit` were committed failing in `79c6229`, before any code change (`AssertionError: 0 != 2 : echo a\ #b; git tag v1` and `AssertionError: 0 != 2`). After the fix the same probe gave gated for all seven and silent for the mention. Edge cases checked to still read as bash does: `# note` on its own line and `echo a # note <<EOF` still start a comment, `${#x}` and `a#b` do not, an escaped backslash before a newline is not a continuation, and a heredoc after `$[2<<1]` still closes.
+
+Live check, 2026-10-24: a headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` session in a throwaway repo with `"gatedCommands": ["^git tag "]`, no `RELEASE_AUTHORIZED` and no marker, one Bash call per command.
+
+| Command                                        | Result                                                                                                                        |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `echo a\ #b; git tag v1`                       | blocked: "Blocked: 'echo a\ #b; git tag v1' matches gated command pattern '^git tag ' in .claude/toolkit.json."               |
+| `x="a b"; echo ${x/ #/}; git tag v2`           | blocked: "Blocked: 'x=\"a b\"; echo ${x/ #/}; git tag v2' matches gated command pattern '^git tag ' in .claude/toolkit.json." |
+| `git ta\`, then `g v4` on the next line        | blocked: "Blocked: 'git ta\⏎g v4' matches gated command pattern '^git tag ' in .claude/toolkit.json."                         |
+| `bash -c -- 'git tag v5'`                      | blocked: "Blocked: 'bash -c -- 'git tag v5'' matches gated command pattern '^git tag ' in .claude/toolkit.json."              |
+| `echo hello # a comment mentioning git tag v9` | ran, printed `hello`                                                                                                          |
+
+`git for-each-ref refs/tags` in the repo afterwards listed nothing.

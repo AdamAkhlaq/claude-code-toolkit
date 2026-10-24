@@ -137,31 +137,47 @@ def git(root: Path, *args: str):
 SHELLS = ("sh", "bash", "zsh", "dash")
 
 
+OPERATOR_CHARS = "();<>|&\n`"
+OPERATOR = re.compile(r"[<>]\(|;;&|&>>|<<<|\n|;;|;&|&&|\|\||\|&|&>|>>|<<|<&|>&|<>|>\||[();<>|&`]")
+WORD_START = " \t\n;&|()<>`"
+
+
 def shell_tokens(command: str) -> list:
     """The words of a shell command with quotes removed, and its control operators as separate tokens: `a&&b;(c)` gives `a && b ; ( c )`.
 
     A newline outside quotes separates commands as `;` does, so it is kept as
-    an operator; a backslash before it continues the line instead. Heredoc
-    bodies are input to a command, not shell, so they are left out.
+    an operator; a backslash before it continues the line instead. Comments
+    and heredoc bodies are not run as commands, so they are left out. shlex
+    joins adjacent operators into one token, `;>` or `&&>`, so each run is
+    split back into the operators it holds. A command shlex cannot read, such
+    as `$'it\\'s'`, is split at operators and whitespace instead.
     """
-    script = without_heredoc_bodies(command).replace("\\\n", " ")
-    lexer = shlex.shlex(script, posix=True, punctuation_chars="();<>|&\n")
+    script = shell_source(command).replace("\\\n", " ")
+    lexer = shlex.shlex(script, posix=True, punctuation_chars=OPERATOR_CHARS)
     lexer.whitespace_split = True
     lexer.whitespace = " \t\r"
+    lexer.commenters = ""
     try:
-        return list(lexer)
+        tokens = list(lexer)
     except ValueError:
-        return command.split()
+        tokens = re.findall(r"[();<>|&`\n]+|[^\s();<>|&`]+", script)
+    return [part for token in tokens for part in (OPERATOR.findall(token) if is_operator(token) else [token])]
 
 
 HEREDOC = re.compile(r"<<(-?)[ \t]*\\?(['\"]?)([\w.-]+)\2")
 
 
-def without_heredoc_bodies(command: str) -> str:
-    """`command` without the body of each heredoc: the lines after a `<<DELIM` outside quotes, up to and including the closing `DELIM` line."""
+def shell_source(command: str) -> str:
+    """`command` without what the shell does not run as commands: `#` comments, and the body of each heredoc.
+
+    A `<<` inside `((...))` or `$((...))` is a shift, not a heredoc. A heredoc
+    whose closing line never comes keeps its body, so a missing delimiter
+    cannot hide the lines after it.
+    """
     kept = []
     pending = []
     quote = ""
+    arithmetic = 0
     index = 0
     while index < len(command):
         char = command[index]
@@ -170,10 +186,26 @@ def without_heredoc_bodies(command: str) -> str:
             index += 2
             continue
         if quote:
-            if char == quote:
+            if char == quote[-1]:
                 quote = ""
+        elif command.startswith("$'", index):
+            quote = "$'"
+            kept.append(quote)
+            index += 2
+            continue
         elif char in "'\"":
             quote = char
+        elif char == "#" and (index == 0 or command[index - 1] in WORD_START):
+            end = command.find("\n", index)
+            index = len(command) if end == -1 else end
+            continue
+        elif command.startswith("((", index):
+            arithmetic += 2
+            kept.append("((")
+            index += 2
+            continue
+        elif arithmetic and char in "()":
+            arithmetic += 1 if char == "(" else -1
         elif char == "\n" and pending:
             kept.append(char)
             index = skip_heredoc_bodies(command, index + 1, pending)
@@ -183,7 +215,7 @@ def without_heredoc_bodies(command: str) -> str:
             kept.append("<<<")
             index += 3
             continue
-        elif char == "<" and (match := HEREDOC.match(command, index)):
+        elif char == "<" and not arithmetic and (match := HEREDOC.match(command, index)):
             pending.append((match.group(1) == "-", match.group(3)))
             kept.append(match.group(0))
             index = match.end()
@@ -194,20 +226,27 @@ def without_heredoc_bodies(command: str) -> str:
 
 
 def skip_heredoc_bodies(command: str, index: int, pending: list) -> int:
-    """The index just past the closing line of each heredoc in `pending`, read in order from `index`."""
+    """The index just past the closing line of each heredoc in `pending`, read in order from `index`.
+
+    Stops at the start of the first body whose closing line never comes.
+    """
     for strip_tabs, delimiter in pending:
-        while index < len(command):
-            end = command.find("\n", index)
+        position = index
+        while position < len(command):
+            end = command.find("\n", position)
             end = len(command) if end == -1 else end
-            line = command[index:end]
-            index = end + 1
+            line = command[position:end]
+            position = end + 1
             if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+                index = min(position, len(command))
                 break
-    return min(index, len(command))
+        else:
+            return index
+    return index
 
 
 def is_operator(token: str) -> bool:
-    return bool(token) and all(char in "();<>|&\n" for char in token)
+    return bool(token) and all(char in OPERATOR_CHARS for char in token)
 
 
 def find_commit(tokens: list):

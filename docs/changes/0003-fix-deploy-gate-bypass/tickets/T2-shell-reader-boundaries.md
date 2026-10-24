@@ -34,3 +34,30 @@ Seam: each hook script as a subprocess, as the other `DeployGateTests` and `RedG
 - `CHANGELOG.md`'s `[Unreleased]` entry for the tokeniser describes comments, arithmetic, unterminated heredocs, merged separators, backticks and the fallback.
 
 ## Evidence
+
+### Evidence 2026-10-24 15:38
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+........................................................................
+----------------------------------------------------------------------
+Ran 72 tests in 8.317s
+
+OK
+```
+
+The proving test and `RedGuardTests.test_a_shift_in_arithmetic_does_not_hide_the_commit_after_it` were committed failing in `310cb8e`, before any code change: every one of the eight `deploy_gate.py` cases exited 0, and the red-guard case failed with `AssertionError: 0 != 2`.
+
+Live check, 2026-10-24: a headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` session in a throwaway repo with `"gatedCommands": ["^git tag "]`, no `RELEASE_AUTHORIZED` and no marker, one Bash call per command.
+
+| Command                                              | Result                                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `true # note`, then `git tag v1` on the next line    | blocked: "Blocked: 'true # note⏎git tag v1' matches gated command pattern '^git tag ' in .claude/toolkit.json."    |
+| `echo $((1<<2))`, then `git tag v2` on the next line | blocked: "Blocked: 'echo $((1<<2))⏎git tag v2' matches gated command pattern '^git tag ' in .claude/toolkit.json." |
+| `true;>out git tag v5`                               | blocked: "Blocked: 'true;>out git tag v5' matches gated command pattern '^git tag ' in .claude/toolkit.json."      |
+| `` echo `git tag v7` ``                              | blocked: "Blocked: 'echo \`git tag v7\`' matches gated command pattern '^git tag ' in .claude/toolkit.json."       |
+| `echo "#" > note.txt`                                | ran, `note.txt` written                                                                                            |
+
+`git for-each-ref refs/tags` in the repo afterwards listed nothing.

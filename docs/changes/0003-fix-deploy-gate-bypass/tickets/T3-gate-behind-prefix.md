@@ -13,7 +13,9 @@ files:
     docs/changes/0003-fix-deploy-gate-bypass/intent.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_gated_command_is_caught_behind_a_prefix: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `X=1 git tag v1`, `env git tag v2`, `sudo -u ci git tag v3`, `time git tag v4`, `! git tag v5`, `{ git tag v6; }`, `if true; then git tag v7; fi`, `git -C . tag v8`, `echo "$(git tag v9)"`, `bash --norc -c "git tag v10"`, `bash -o pipefail -c "git tag v11"`, `git status | git tag v12` and `eval "git tag v13"`, and exits 0 silently on `echo "git tag v1"`, `git log --grep "git tag "` and `git commit -m "add git tag support"`'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T3
 ---
 
 ## Context

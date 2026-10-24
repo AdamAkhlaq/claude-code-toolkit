@@ -172,17 +172,19 @@ def unquote(token: str) -> str:
     return re.sub(QUOTED, lambda match: match.group(0)[1:-1], token)
 
 
-HEREDOC = re.compile(r"<<(-?)[ \t]*\\?(['\"]?)([\w.-]+)\2")
+HEREDOC = re.compile(r"<<(-?)[ \t]*(\\?)(['\"]?)([\w.-]+)\3")
 
 
-def shell_source(command: str) -> str:
+def shell_source(command: str, bodies=None) -> str:
     """`command` without what the shell does not run as commands: `#` comments, the body of each heredoc, and each backslash-newline, which the shell deletes.
 
     A `#` starts a comment only at the start of a word, outside quotes and
     `${...}`, so `a\\ #b` and `${x/ #/}` do not. A `<<` inside `((...))`,
     `$((...))` or `$[...]` is a shift, not a heredoc. A heredoc whose closing
     line never comes keeps its body, so a missing delimiter cannot hide the
-    lines after it.
+    lines after it. When `bodies` is a list, the body of each heredoc whose
+    delimiter is unquoted is appended to it: the shell still runs `$(...)` and
+    backticks there.
     """
     kept = []
     pending = []
@@ -239,7 +241,7 @@ def shell_source(command: str) -> str:
             brackets += 1 if char == "[" else -1
         elif char == "\n" and pending:
             kept.append(char)
-            index = skip_heredoc_bodies(command, index + 1, pending)
+            index = skip_heredoc_bodies(command, index + 1, pending, bodies)
             pending = []
             at_word_start = True
             continue
@@ -248,7 +250,7 @@ def shell_source(command: str) -> str:
             index += 3
             continue
         elif char == "<" and not arithmetic and not brackets and (match := HEREDOC.match(command, index)):
-            pending.append((match.group(1) == "-", match.group(3)))
+            pending.append((match.group(1) == "-", match.group(4), not (match.group(2) or match.group(3))))
             kept.append(match.group(0))
             index = match.end()
             continue
@@ -258,21 +260,24 @@ def shell_source(command: str) -> str:
     return "".join(kept)
 
 
-def skip_heredoc_bodies(command: str, index: int, pending: list) -> int:
+def skip_heredoc_bodies(command: str, index: int, pending: list, bodies=None) -> int:
     """The index just past the closing line of each heredoc in `pending`, read in order from `index`.
 
-    Stops at the start of the first body whose closing line never comes.
+    Stops at the start of the first body whose closing line never comes. The
+    body of each heredoc that expands is appended to `bodies` when it is a list.
     """
-    for strip_tabs, delimiter in pending:
+    for strip_tabs, delimiter, expands in pending:
         position = index
         while position < len(command):
             end = command.find("\n", position)
             end = len(command) if end == -1 else end
             line = command[position:end]
-            position = end + 1
             if (line.lstrip("\t") if strip_tabs else line) == delimiter:
-                index = min(position, len(command))
+                if expands and bodies is not None:
+                    bodies.append(command[index:position])
+                index = min(end + 1, len(command))
                 break
+            position = end + 1
         else:
             return index
     return index

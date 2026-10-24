@@ -36,10 +36,15 @@ def program_lines(command: str) -> list:
     is whole; one from a later word stops after WINDOW words, so a long
     argument list cannot make the lines grow with its square. `git` is read
     past its global options as well, and the scripts of `bash -c`, `eval`,
-    `$(...)` and backticks are read as commands of their own.
+    `$(...)` and backticks are read as commands of their own, in the body of
+    a heredoc with an unquoted delimiter too.
     """
     lines = []
-    for inner in substitutions(shell_source(command)):
+    bodies = []
+    inners = substitutions(shell_source(command, bodies))
+    for body in bodies:
+        inners.extend(substitutions(body, quotes=False))
+    for inner in inners:
         lines.extend(program_lines(inner))
     for words in simple_commands(command):
         for index, word in enumerate(words):
@@ -76,8 +81,11 @@ def simple_commands(command: str) -> list:
     return found
 
 
-def substitutions(command: str) -> list:
-    """The command inside each `$(...)` and backtick span the shell runs in `command`: outside quotes or inside double quotes, never inside single quotes or after a backslash."""
+def substitutions(command: str, quotes: bool = True) -> list:
+    """The command inside each `$(...)` and backtick span the shell runs in `command`: outside quotes or inside double quotes, never inside single quotes or after a backslash.
+
+    With `quotes` false, as in a heredoc body, quote characters are literal.
+    """
     found = []
     quote = ""
     index = 0
@@ -86,7 +94,9 @@ def substitutions(command: str) -> list:
         if char == "\\" and quote != "'":
             index += 2
             continue
-        if quote in ("'", "$'"):
+        if not quotes and char in "'\"":
+            pass
+        elif quote in ("'", "$'"):
             if char == "'":
                 quote = ""
         elif command.startswith("$'", index) and not quote:
@@ -110,13 +120,43 @@ def substitutions(command: str) -> list:
 
 
 def closing_paren(command: str, start: int) -> int:
-    """The index of the `)` that closes the `(` at `start`, or the end of `command`."""
+    """The index of the `)` that closes the `(` at `start`, or the end of `command`.
+
+    Parentheses in quoted text or after a backslash do not count, nor does the
+    `)` that ends a `case` pattern.
+    """
     depth = 0
-    for index in range(start, len(command)):
-        depth += {"(": 1, ")": -1}.get(command[index], 0)
-        if depth == 0:
-            return index
+    cases = []
+    quote = ""
+    index = start
+    while index < len(command):
+        char = command[index]
+        if char == "\\" and quote != "'":
+            index += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif keyword_at(command, index, "case"):
+            cases.append(depth)
+        elif keyword_at(command, index, "esac") and cases:
+            cases.pop()
+        elif char == "(":
+            depth += 1
+        elif char == ")" and not (cases and cases[-1] == depth):
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
     return len(command)
+
+
+def keyword_at(command: str, index: int, word: str) -> bool:
+    before = command[index - 1] if index else " "
+    after = command[index + len(word) : index + len(word) + 1] or " "
+    return command.startswith(word, index) and not (before.isalnum() or before == "_") and not (after.isalnum() or after == "_")
 
 
 def main() -> int:

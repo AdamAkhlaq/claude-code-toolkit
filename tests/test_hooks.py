@@ -203,6 +203,20 @@ class DeployGateTests(HookCase):
         command = "echo \"a git tag v1\" $'\\''"
         self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
 
+    def test_a_substitution_the_shell_runs_is_read_whole(self):
+        self.configure(gatedCommands=["^git tag "])
+        for command in (
+            "cat <<EOF\n$(git tag v1)\nEOF",
+            "cat <<EOF\n`git tag v2`\nEOF",
+            'echo "$(echo ")"; git tag v3)"',
+            'echo "$(case a in a) git tag v4;; esac)"',
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err)
+        for command in ("cat <<'EOF'\n$(git tag v1)\nEOF", 'cat <<"EOF"\n`git tag v1`\nEOF', "cat <<EOF\ngit tag v1\nEOF"):
+            self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+
     def test_a_gated_command_is_caught_behind_a_prefix(self):
         self.configure(gatedCommands=["^git tag "])
         for command in (

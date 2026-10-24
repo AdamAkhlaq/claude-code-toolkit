@@ -10,7 +10,9 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_substitution_the_shell_runs_is_read_whole: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `cat <<EOF` with `$(git tag v1)` as its body, the same with a backticked `git tag v2`, `echo "$(echo ")"; git tag v3)"` and `echo "$(case a in a) git tag v4;; esac)"`, and exits 0 silently on `cat <<''EOF''` with `$(git tag v1)` as its body'
-status: todo
+status: done
+executed_by: single
+branch: ticket/0003-T5
 ---
 
 ## Context
@@ -30,3 +32,44 @@ Seam: the hook script as a subprocess. Write the proving test first and commit i
 - `CHANGELOG.md`'s `[Unreleased]` `deploy-gate` entry says a substitution in an unquoted heredoc is read.
 
 ## Evidence
+
+### Evidence 2026-10-24 16:16
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+.............................................................................
+----------------------------------------------------------------------
+Ran 77 tests in 8.721s
+
+OK
+```
+
+Each case was first run with `git` stubbed as a shell function, in macOS's bash 3.2.57 and in zsh: both shells ran `git tag` for the two unquoted heredocs and the quoted `)` case; the `case` inside `$(...)` ran in zsh, while bash 3.2 cannot parse it (bash 4 and later can); none of the three silent cases ran anything. The gate at `01a4aab` let all four through. The proving test was committed failing (`AssertionError: 0 != 2 : cat <<EOF⏎$(git tag v1)⏎EOF`), before any code change; I ran it in the same call as an earlier commit attempt, so `red-guard` checked and blocked that attempt, and the test was then committed on its own. After the fix the probe gave gated for all four and silent for the three. Edge cases checked: a nested `$(echo $(git tag v1))` in double quotes, a `case` with a `(a)` pattern, an escaped `\)`, a `<<-` heredoc, and `$(showcase ) ; git tag v3)`, where the substitution really ends at the first `)` and the rest is literal, so it stays silent.
+
+The test case list holds two silent cases beyond the ticket's `proves` (`<<"EOF"` with a backtick body, and an unquoted heredoc whose body is a bare `git tag v1` line), which pin that a body is never read as commands itself.
+
+Live check, 2026-10-24: a headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` session in a throwaway repo with `"gatedCommands": ["^git tag "]`, no `RELEASE_AUTHORIZED` and no marker, one Bash call per command.
+
+| Command                                               | Result                                                                                                                      |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `cat <<EOF`, `$(git tag v1)`, `EOF`                   | blocked: "Blocked: 'cat <<EOF⏎$(git tag v1)⏎EOF' matches gated command pattern '^git tag ' in .claude/toolkit.json."        |
+| `echo "$(echo ")"; git tag v3)"`                      | blocked: "Blocked: 'echo \"$(echo \")\"; git tag v3)\"' matches gated command pattern '^git tag ' in .claude/toolkit.json." |
+| `cat > literal.md <<'EOF'`, `$(git tag v9)`, `EOF`    | ran, `literal.md` holds the literal `$(git tag v9)`                                                                         |
+| `cat > notes.md <<EOF`, `built on $(date +%Y)`, `EOF` | ran, `notes.md` holds `built on 2026`                                                                                       |
+
+`git for-each-ref refs/tags` in the repo afterwards listed nothing.
+
+### Verifier 2026-10-24 16:18
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok (id, title, blocked_by, files, proves, status in-progress, executed_by, branch, and Evidence with the quoted `python3 -m unittest discover -s tests` run)
+2. proving test present and meaningful: ok. `DeployGateTests.test_a_substitution_the_shell_runs_is_read_whole` was added on this branch in df796cb, before the fix in e2b38ac. It runs `deploy_gate.py` as a subprocess (`run_hook`), which is the seam the ticket names. It asserts exit 2 with "release authorisation" for the four `proves` cases, and `(0, "", "")` for `<<'EOF'`, `<<"EOF"` and a bare `git tag v1` body line. It fails when run against the integration branch's `hooks/` in a scratch worktree: `AssertionError: 0 != 2 : cat <<EOF⏎$(git tag v1)⏎EOF`
+3. proving test run: 0, `Ran 1 test in 0.188s OK`
+4. feedback command: 0, `Ran 77 tests in 9.488s OK`
+5. acceptance: 3 of 3 checked. The proving test passes (check 3). T1's, T2's, T3's and all other tests pass in the 77-test run, and the branch's test diff only adds lines. The `[Unreleased]` `deploy-gate` entry in `CHANGELOG.md` now says "one in the body of a heredoc whose delimiter is unquoted, where the shell runs it".
+6. scope: ok (CHANGELOG.md, hooks/scripts/_common.py, hooks/scripts/deploy_gate.py, tests/test_hooks.py, plus the ticket file)
+7. tests intact: ok (no removed lines, no skip or expectedFailure markers in the test diff)

@@ -4,7 +4,9 @@ title: The shell reader splits words where bash does
 blocked_by: [T3]
 files: [hooks/scripts/_common.py, tests/test_hooks.py, CHANGELOG.md]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_shell_reader_splits_words_where_bash_does: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `echo a\ #b; git tag v1`, `x="a b"; echo ${x/ #/}; git tag v2`, `echo $[1<<EOF]` with `git tag v3` and `EOF` on the next two lines, `git ta\` with `g v4` on the next line, `bash -c -- ''git tag v5''`, `bash -c -e ''git tag v6''` and `ksh -c ''git tag v7''`, and exits 0 silently on `echo "a git tag v1" $''\''''`, a quoted mention in a call shlex cannot parse'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T4
 ---
 
 ## Context

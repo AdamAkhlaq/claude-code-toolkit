@@ -37,3 +37,32 @@ Seam: the hook script as a subprocess, plus a test that reads `hooks/hooks.json`
 - `CHANGELOG.md`'s `[Unreleased]` `deploy-gate` entry says it blocks a call too long to read and never fails open on a timeout.
 
 ## Evidence
+
+### Evidence 2026-10-24 16:21
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+..............................................................................
+----------------------------------------------------------------------
+Ran 78 tests in 9.904s
+
+OK
+```
+
+The proving test was committed failing before any code change. Run case by case against the hook at `c3bfdb2`: the padded force push behind `env` exited 0, 40 `eval` words were still running after 10 s, 200000 words exited 0 in 0.7 s, and `env git add` with 5000 paths exited 0 in 0.1 s, the one case that must stay as it was; `hooks/hooks.json` had no timeout for `deploy-gate`. After the fix: exit 2 in 0.0 s, exit 2 in 0.0 s, exit 2 in 0.4 s with "too long to read", and exit 0 in 0.2 s. `claude plugin validate .` passes.
+
+Design as the ticket set it: one line per simple command, kept whole; a pattern anchored with `^` is matched with the `^` stripped at each program word's basename offset, so a path argument is never rewritten; `BUDGET` is 100000 words read, recursion included, and past it the call is `Unreadable` and blocked; the first `eval` or shell in a simple command is read into once. `hooks/hooks.json` gives `deploy-gate` `"timeout": 30` and `"onFailure": "block"`.
+
+Live check, 2026-10-24: a headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` session in a throwaway repo with `"gatedCommands": ["^git tag ", "^git push .*--force"]`, no `RELEASE_AUTHORIZED` and no marker, one Bash call per command.
+
+| Command                                          | Result                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 40 `eval` words, then `git tag v1`               | blocked, but by `red-guard`, which timed out at its 600 s limit and blocked on `onFailure`: "PreToolUse:Bash hook error: [python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/red_guard.py\"]: timed out; blocking because onFailure is \"block\"". `deploy-gate` itself blocks this call in 0.0 s, as the probe above shows. |
+| `env git push origin r0 ... r69 --force`         | blocked: "Blocked: 'env git push origin r0 r1 r2 ...' matches gated command pattern '^git push .*--force' in .claude/toolkit.json."                                                                                                                                                                                     |
+| `touch` 300 files, then `env git add` of all 300 | ran, exit 0, 300 files staged                                                                                                                                                                                                                                                                                           |
+
+`git for-each-ref refs/tags` in the repo afterwards listed nothing.
+
+Found in the live check, outside this ticket's files: `_common.find_commit` recurses into the rest of the tokens from every `eval`, so a call with no commit in it costs twice as much per `eval` word (`is_git_commit` on 18 `eval` words before `git status`: 3.4 s). `red-guard`, `secret-guard` and `ticket-sync` all call it; `red-guard` blocks the call when its 600 s timeout runs out, the other two have no timeout and let it through, which is harmless as there is no commit to check. A call with a commit in it returns early and is fast, so it is not a bypass. Recorded for its own ticket.

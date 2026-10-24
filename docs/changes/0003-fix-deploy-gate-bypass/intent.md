@@ -34,11 +34,11 @@ Reproduced on 2026-10-23 in a headless Claude Code session (`claude --plugin-dir
 
 ## Proposed outcome
 
-The regression test passes and the reported route behaves as expected: a gated command is blocked without authorisation wherever it sits in a Bash call, after `&&`, `;` or `|`, named by path, or inside `bash -c`, and a command that only mentions it in an argument, such as `echo "git tag v1"`, is not.
+The regression test passes and the reported route behaves as expected: a gated command is blocked without authorisation wherever it sits in a Bash call, after `&&`, `;` or `|`, named by path, or inside `bash -c`, and a command that only mentions it in a quoted argument, such as `echo "git tag v1"`, is not. An unquoted mention, such as `echo git tag v1`, is blocked on purpose: a word outside quotes might name a program, and the gate fails closed.
 
 The guarantee ends at what the Bash call says: a script fed to an interpreter, such as `echo 'git tag v1' | bash` or `bash release.sh`, is not read, and a hard guarantee needs a permissions deny rule or withheld credentials.
 
-A bug fix needs no spec or plan; this intent and its one ticket are the change.
+A bug fix needs no spec or plan; this intent and its tickets are the change.
 
 ## Affected users and systems
 

@@ -40,7 +40,7 @@ A bug fix needs no spec or plan; this intent and its one ticket are the change.
 
 ## Affected users and systems
 
-Every consuming repo with `gatedCommands`. Code: `hooks/scripts/deploy_gate.py`, reusing the shell tokeniser `red-guard` added to `hooks/scripts/_common.py` in 0.5.0.
+Every consuming repo with `gatedCommands`, and every repo with a `feedbackCommand`: `red-guard` reads commands through the same shell tokeniser, so its view of which commands a Bash call runs changes too. Code: `hooks/scripts/deploy_gate.py` and the shell tokeniser in `hooks/scripts/_common.py`, which `red-guard` added in 0.5.0.
 
 ## Amendment 2026-10-24: building
 

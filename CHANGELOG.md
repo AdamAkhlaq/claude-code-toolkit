@@ -7,7 +7,7 @@ All notable changes to this plugin are recorded here. The format follows [Keep a
 ### Fixed
 
 - `deploy-gate` matches each `gatedCommands` pattern against each simple command in a Bash call as well as the whole call, so a pattern anchored with `^` catches a gated command after `&&`, `;`, `|` or a newline, named by path, or inside `bash -c` or `eval`. Before, `cd . && git tag v1` ran without release authorisation. This is change 0003.
-- `_common.shell_tokens` keeps a newline outside quotes as a control operator, joins backslash line continuations, and leaves out heredoc bodies, so `red-guard` also reads a multi-line command as separate commands and no longer reads a heredoc commit message as shell.
+- `_common.shell_tokens` keeps a newline outside quotes as a control operator, joins backslash line continuations, and leaves out `#` comments and heredoc bodies, so `red-guard` also reads a multi-line command as separate commands and no longer reads a heredoc commit message as shell. A comment keeps the newline after it, a `<<` shift inside `$((...))` is not read as a heredoc, a heredoc whose closing line never comes keeps its body, a separator joined to a redirect (`;>`, `&&>`) still separates, a backtick separates like `$(`, and a command shlex cannot parse, such as `$'it\'s'`, is still split at its operators, so none of these can hide a later command from `deploy-gate` or `red-guard`.
 
 ## [0.5.0] - 2026-10-22
 

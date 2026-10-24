@@ -170,6 +170,22 @@ class DeployGateTests(HookCase):
         for command in ('echo "git tag v1"', "git log --grep 'git tag '", 'echo "notes\ngit tag v1"', "cat > notes.md <<'EOF'\ngit tag v1 is next\n| `/usr/bin/git tag v2` |\nEOF"):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
 
+    def test_the_shell_reader_keeps_every_command_boundary(self):
+        self.configure(gatedCommands=["^git tag "])
+        for command in (
+            "true # note\ngit tag v1",
+            "echo $((1<<2))\ngit tag v2",
+            "# see <<EOF\ngit tag v3",
+            "cat <<EOF\ngit tag v4",
+            "true;>out git tag v5",
+            "true&&>/dev/null git tag v6",
+            "echo `git tag v7`",
+            "echo $'it\\'s'; git tag v8",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err)
+
     def test_non_matching_and_invalid_patterns(self):
         self.configure(gatedCommands=["[unclosed", "terraform apply"])
         code, _, err = run_hook("deploy_gate.py", bash_event("terraform plan"), self.root)
@@ -417,6 +433,14 @@ class RedGuardTests(HookCase):
         self.configure_committed(feedbackCommand=feedback(1, "boom"))
         (self.root / "app.py").write_text("x = 1\n")
         code, _, err = run_hook("red_guard.py", bash_event('cd "$PWD" && git commit -am x'), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("boom", err)
+
+    def test_a_shift_in_arithmetic_does_not_hide_the_commit_after_it(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1, "boom"))
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event("echo $((1<<2))\ngit commit -am x"), self.root)
         self.assertEqual(code, 2)
         self.assertIn("boom", err)
 

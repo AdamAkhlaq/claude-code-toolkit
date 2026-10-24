@@ -28,7 +28,7 @@ The plugin's templates live at `${CLAUDE_PLUGIN_ROOT}/templates/`. The graph too
    - `formatters`, `linters`: maps from a glob to a command with a `{file}` placeholder, run after every edit to a matching file.
    - `testGlobs`: patterns that identify test files, used by the test lock during bug fixes. Leave empty to use the built-in defaults.
    - `feedbackCommand`: the test command from step 2.
-   - `gatedCommands`: regular expressions matched against shell commands. A match is blocked until a human authorises a release.
+   - `gatedCommands`: regular expressions matched against the whole Bash call and against each simple command in it, so `^` anchors to the start of any command in the call. A match is blocked until a human authorises a release.
    - `secretAllowlist`: paths where credential-looking strings are expected, such as fixtures.
    - `concurrency`: how many tickets may run at once. Default 3.
    - `tracker`: `local`. Tickets live in the repo.

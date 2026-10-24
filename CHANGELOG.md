@@ -4,6 +4,11 @@ All notable changes to this plugin are recorded here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Fixed
+
+- `deploy-gate` matches each `gatedCommands` pattern against each simple command in a Bash call as well as the whole call, so a pattern anchored with `^` catches a gated command after `&&`, `;`, `|` or a newline, named by path, or inside `bash -c` or `eval`. Before, `cd . && git tag v1` ran without release authorisation. This is change 0003.
+- `_common.shell_tokens` keeps a newline outside quotes as a control operator, joins backslash line continuations, and leaves out heredoc bodies, so `red-guard` also reads a multi-line command as separate commands and no longer reads a heredoc commit message as shell.
+
 ## [0.5.0] - 2026-10-22
 
 No commit lands while the feedback command is red. The rule was text the executor could miss, and once did; it is now a hook. This is change 0002.

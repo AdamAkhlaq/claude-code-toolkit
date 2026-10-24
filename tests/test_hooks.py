@@ -161,6 +161,8 @@ class DeployGateTests(HookCase):
             "git fetch -q && gh release create v6",
             "git fetch -q\ngit tag v7",
             "cat > notes.md <<'EOF'\nnotes\nEOF\ngit tag v8",
+            'echo "a <<EOF"\ngit tag v9',
+            "cat <<< x\ngit tag v10",
         ):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
@@ -405,9 +407,9 @@ class RedGuardTests(HookCase):
             self.assertEqual(run_hook("red_guard.py", bash_event(command), self.root)[0], 2, command)
         (self.root / "tests").mkdir()
         (self.root / "tests" / "test_x.py").write_text("assert False\n")
-        for command in ("sed -i '' s/0/1/ app.py && git commit -am x", "cat README.md > app.py && git commit -am x"):
+        for command in ("sed -i '' s/0/1/ app.py && git commit -am x", "cat README.md > app.py && git commit -am x", "git status\nsed -i '' s/0/1/ app.py\ngit commit -am x"):
             self.assertEqual(run_hook("red_guard.py", bash_event(command), self.root)[0], 2, command)
-        for command in ("git add -A && git commit -m x", "cd . && git status && git -C . add tests && git commit -m x", "git add -A && git commit -m x 2>&1 | tail -5", "git commit -am x > /dev/null"):
+        for command in ("git add -A && git commit -m x", "cd . && git status && git -C . add tests && git commit -m x", "git add -A && git commit -m x 2>&1 | tail -5", "git commit -am x > /dev/null", "git add tests && git commit -F - <<'EOF'\ntest(x): reproduce (a bug)\nEOF"):
             self.assertEqual(run_hook("red_guard.py", bash_event(command), self.root), (0, "", ""), command)
 
     def test_an_unparsable_directory_falls_back_to_the_shell_directory(self):

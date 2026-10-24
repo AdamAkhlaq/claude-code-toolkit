@@ -8,6 +8,7 @@ config is absent. A hook only ever acts on a project that opted in.
 import fnmatch
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -137,17 +138,76 @@ SHELLS = ("sh", "bash", "zsh", "dash")
 
 
 def shell_tokens(command: str) -> list:
-    """The words of a shell command with quotes removed, and its control operators as separate tokens: `a&&b;(c)` gives `a && b ; ( c )`."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    """The words of a shell command with quotes removed, and its control operators as separate tokens: `a&&b;(c)` gives `a && b ; ( c )`.
+
+    A newline outside quotes separates commands as `;` does, so it is kept as
+    an operator; a backslash before it continues the line instead. Heredoc
+    bodies are input to a command, not shell, so they are left out.
+    """
+    script = without_heredoc_bodies(command).replace("\\\n", " ")
+    lexer = shlex.shlex(script, posix=True, punctuation_chars="();<>|&\n")
     lexer.whitespace_split = True
+    lexer.whitespace = " \t\r"
     try:
         return list(lexer)
     except ValueError:
         return command.split()
 
 
+HEREDOC = re.compile(r"<<(-?)[ \t]*\\?(['\"]?)([\w.-]+)\2")
+
+
+def without_heredoc_bodies(command: str) -> str:
+    """`command` without the body of each heredoc: the lines after a `<<DELIM` outside quotes, up to and including the closing `DELIM` line."""
+    kept = []
+    pending = []
+    quote = ""
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if char == "\\" and quote != "'":
+            kept.append(command[index : index + 2])
+            index += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif char == "\n" and pending:
+            kept.append(char)
+            index = skip_heredoc_bodies(command, index + 1, pending)
+            pending = []
+            continue
+        elif command.startswith("<<<", index):
+            kept.append("<<<")
+            index += 3
+            continue
+        elif char == "<" and (match := HEREDOC.match(command, index)):
+            pending.append((match.group(1) == "-", match.group(3)))
+            kept.append(match.group(0))
+            index = match.end()
+            continue
+        kept.append(char)
+        index += 1
+    return "".join(kept)
+
+
+def skip_heredoc_bodies(command: str, index: int, pending: list) -> int:
+    """The index just past the closing line of each heredoc in `pending`, read in order from `index`."""
+    for strip_tabs, delimiter in pending:
+        while index < len(command):
+            end = command.find("\n", index)
+            end = len(command) if end == -1 else end
+            line = command[index:end]
+            index = end + 1
+            if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+                break
+    return min(index, len(command))
+
+
 def is_operator(token: str) -> bool:
-    return bool(token) and all(char in "();<>|&" for char in token)
+    return bool(token) and all(char in "();<>|&\n" for char in token)
 
 
 def find_commit(tokens: list):

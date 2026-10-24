@@ -10,7 +10,7 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_substitution_the_shell_runs_is_read_whole: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `cat <<EOF` with `$(git tag v1)` as its body, the same with a backticked `git tag v2`, `echo "$(echo ")"; git tag v3)"` and `echo "$(case a in a) git tag v4;; esac)"`, and exits 0 silently on `cat <<''EOF''` with `$(git tag v1)` as its body'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T5
 ---
@@ -60,3 +60,16 @@ Live check, 2026-10-24: a headless `claude --plugin-dir <this checkout> -p --per
 | `cat > notes.md <<EOF`, `built on $(date +%Y)`, `EOF` | ran, `notes.md` holds `built on 2026`                                                                                       |
 
 `git for-each-ref refs/tags` in the repo afterwards listed nothing.
+
+### Verifier 2026-10-24 16:18
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok (id, title, blocked_by, files, proves, status in-progress, executed_by, branch, and Evidence with the quoted `python3 -m unittest discover -s tests` run)
+2. proving test present and meaningful: ok. `DeployGateTests.test_a_substitution_the_shell_runs_is_read_whole` was added on this branch in df796cb, before the fix in e2b38ac. It runs `deploy_gate.py` as a subprocess (`run_hook`), which is the seam the ticket names. It asserts exit 2 with "release authorisation" for the four `proves` cases, and `(0, "", "")` for `<<'EOF'`, `<<"EOF"` and a bare `git tag v1` body line. It fails when run against the integration branch's `hooks/` in a scratch worktree: `AssertionError: 0 != 2 : cat <<EOF⏎$(git tag v1)⏎EOF`
+3. proving test run: 0, `Ran 1 test in 0.188s OK`
+4. feedback command: 0, `Ran 77 tests in 9.488s OK`
+5. acceptance: 3 of 3 checked. The proving test passes (check 3). T1's, T2's, T3's and all other tests pass in the 77-test run, and the branch's test diff only adds lines. The `[Unreleased]` `deploy-gate` entry in `CHANGELOG.md` now says "one in the body of a heredoc whose delimiter is unquoted, where the shell runs it".
+6. scope: ok (CHANGELOG.md, hooks/scripts/_common.py, hooks/scripts/deploy_gate.py, tests/test_hooks.py, plus the ticket file)
+7. tests intact: ok (no removed lines, no skip or expectedFailure markers in the test diff)

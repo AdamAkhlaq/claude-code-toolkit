@@ -186,6 +186,23 @@ class DeployGateTests(HookCase):
             self.assertEqual(code, 2, command)
             self.assertIn("release authorisation", err)
 
+    def test_the_shell_reader_splits_words_where_bash_does(self):
+        self.configure(gatedCommands=["^git tag "])
+        for command in (
+            "echo a\\ #b; git tag v1",
+            'x="a b"; echo ${x/ #/}; git tag v2',
+            "echo $[1<<EOF]\ngit tag v3\nEOF",
+            "git ta\\\ng v4",
+            "bash -c -- 'git tag v5'",
+            "bash -c -e 'git tag v6'",
+            "ksh -c 'git tag v7'",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err)
+        command = "echo \"a git tag v1\" $'\\''"
+        self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+
     def test_a_gated_command_is_caught_behind_a_prefix(self):
         self.configure(gatedCommands=["^git tag "])
         for command in (
@@ -472,6 +489,14 @@ class RedGuardTests(HookCase):
         self.configure_committed(feedbackCommand=feedback(1, "boom"))
         (self.root / "app.py").write_text("x = 1\n")
         code, _, err = run_hook("red_guard.py", bash_event('bash --norc -c "git commit -am x"'), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("boom", err)
+
+    def test_an_option_after_c_does_not_hide_the_commit(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1, "boom"))
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event("bash -c -- 'git commit -am x'"), self.root)
         self.assertEqual(code, 2)
         self.assertIn("boom", err)
 

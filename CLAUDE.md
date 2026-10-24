@@ -32,5 +32,6 @@ This repo is the `toolkit` Claude Code plugin, served from its own marketplace `
 - Never use an em dash. Never hard-wrap Markdown prose; one paragraph per line.
 - Never add a dependency to a hook or the graph tool. Standard library only, so consumers need nothing but `python3` and `git`.
 - Never make a hook act on a project without `.claude/toolkit.json`.
+- Never recognise a shell command in a hook by matching the raw Bash string. Read it with `_common.shell_tokens` and match each simple command, so rewording (`cd . &&`, a newline, `/usr/bin/git`, `bash -c`) cannot hide it.
 - Never put per-project configuration in the plugin. It belongs in the consuming repo's `toolkit.json`.
 - Never commit or tag without the maintainer's explicit go-ahead.

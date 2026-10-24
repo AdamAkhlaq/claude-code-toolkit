@@ -10,7 +10,7 @@ files:
     docs/changes/0003-fix-deploy-gate-bypass/intent.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_shell_reader_keeps_every_command_boundary: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `git tag v1` to `git tag v4` on the line after, in turn, `true # note`, `echo $((1<<2))`, `# see <<EOF` and a `cat <<EOF` whose closing `EOF` never comes, and on `true;>out git tag v5`, `true&&>/dev/null git tag v6`, `` echo `git tag v7` `` and `echo $''it\''s''; git tag v8`'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T2
 ---
@@ -61,3 +61,16 @@ Live check, 2026-10-24: a headless `claude --plugin-dir <this checkout> -p --per
 | `echo "#" > note.txt`                                | ran, `note.txt` written                                                                                            |
 
 `git for-each-ref refs/tags` in the repo afterwards listed nothing.
+
+### Verifier 2026-10-24 15:40
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. Added in `310cb8e` (tests only) and exercises `deploy_gate.py` as a subprocess. Run against a `git archive` of `310cb8e`, all eight commands exited 0; at HEAD all eight exit 2. The red-guard case fails at `310cb8e` with `AssertionError: 0 != 2`. Controls still exit 0 at HEAD: `echo "#" > note.txt`, `echo a#b`, `git log --grep 'git tag '`, a terminated `cat <<EOF` with `git tag v1` in the body, and `echo $((1<<2)) # git tag x`.
+3. proving test run: exit 0, `Ran 1 test in 0.230s OK` (`python3 -m unittest tests.test_hooks.DeployGateTests.test_the_shell_reader_keeps_every_command_boundary`)
+4. feedback command: exit 0, `Ran 72 tests in 8.584s OK` (`python3 -m unittest discover -s tests`)
+5. acceptance: 5 of 5 checked, none failed. (1) The proving test passes, per check 3. (2) `RedGuardTests.test_a_shift_in_arithmetic_does_not_hide_the_commit_after_it` is in `310cb8e`, fails there and passes at HEAD. (3) The test diff only adds lines (0 removed), so T1's tests are unchanged, and all 72 tests pass. (4) `intent.md` "Affected users and systems" names `red-guard` and `hooks/scripts/_common.py`. (5) The CHANGELOG `[Unreleased]` tokeniser entry covers comments, `$((...))` shifts, unterminated heredocs, `;>`/`&&>`, backticks and the shlex fallback.
+6. scope: ok. `CHANGELOG.md`, `intent.md`, `hooks/scripts/_common.py` and `tests/test_hooks.py` are all in `files`, plus the ticket file.
+7. tests intact: ok. No deleted assertions and no skip or expected-failure markers.

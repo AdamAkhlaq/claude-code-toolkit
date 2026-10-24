@@ -6,7 +6,8 @@ All notable changes to this plugin are recorded here. The format follows [Keep a
 
 ### Fixed
 
-- `deploy-gate` matches each `gatedCommands` pattern against each simple command in a Bash call as well as the whole call, so a pattern anchored with `^` catches a gated command after `&&`, `;`, `|` or a newline, named by path, or inside `bash -c` or `eval`. Before, `cd . && git tag v1` ran without release authorisation. This is change 0003.
+- `deploy-gate` matches each `gatedCommands` pattern against the whole Bash call and against a line from every unquoted word in it that could name a program, so a pattern anchored with `^` catches a gated command after `&&`, `;`, `|` or a newline, named by path, behind an assignment, a wrapper such as `sudo` or `env`, or a keyword such as `then`, after git's global options, and inside `bash -c` (whatever options come first), `eval`, `$(...)` or backticks, quoted or not. A word in quotes names no program, so a mention such as `echo "git tag v1"` is not gated. Before, `cd . && git tag v1` ran without release authorisation. This is change 0003.
+- `_common.find_commit` finds a shell's `-c` script after any options, so `red-guard` also checks `bash --norc -c "git commit ..."`.
 - `_common.shell_tokens` keeps a newline outside quotes as a control operator, joins backslash line continuations, and leaves out `#` comments and heredoc bodies, so `red-guard` also reads a multi-line command as separate commands and no longer reads a heredoc commit message as shell. A comment keeps the newline after it, a `<<` shift inside `$((...))` is not read as a heredoc, a heredoc whose closing line never comes keeps its body, a separator joined to a redirect (`;>`, `&&>`) still separates, a backtick separates like `$(`, and a command shlex cannot parse, such as `$'it\'s'`, is still split at its operators, so none of these can hide a later command from `deploy-gate` or `red-guard`.
 
 ## [0.5.0] - 2026-10-22

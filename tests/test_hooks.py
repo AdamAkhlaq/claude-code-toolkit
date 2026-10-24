@@ -186,6 +186,29 @@ class DeployGateTests(HookCase):
             self.assertEqual(code, 2, command)
             self.assertIn("release authorisation", err)
 
+    def test_a_gated_command_is_caught_behind_a_prefix(self):
+        self.configure(gatedCommands=["^git tag "])
+        for command in (
+            "X=1 git tag v1",
+            "env git tag v2",
+            "sudo -u ci git tag v3",
+            "time git tag v4",
+            "! git tag v5",
+            "{ git tag v6; }",
+            "if true; then git tag v7; fi",
+            "git -C . tag v8",
+            'echo "$(git tag v9)"',
+            'bash --norc -c "git tag v10"',
+            'bash -o pipefail -c "git tag v11"',
+            "git status | git tag v12",
+            'eval "git tag v13"',
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err)
+        for command in ('echo "git tag v1"', 'git log --grep "git tag "', 'git commit -m "add git tag support"', "echo '$(git tag v1)'", "echo '`git tag v1`'", 'echo "\\$(git tag v1)"', "echo $'$(git tag v1)'"):
+            self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+
     def test_non_matching_and_invalid_patterns(self):
         self.configure(gatedCommands=["[unclosed", "terraform apply"])
         code, _, err = run_hook("deploy_gate.py", bash_event("terraform plan"), self.root)
@@ -441,6 +464,14 @@ class RedGuardTests(HookCase):
         self.configure_committed(feedbackCommand=feedback(1, "boom"))
         (self.root / "app.py").write_text("x = 1\n")
         code, _, err = run_hook("red_guard.py", bash_event("echo $((1<<2))\ngit commit -am x"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("boom", err)
+
+    def test_a_shell_option_before_c_does_not_hide_the_commit(self):
+        self.init_repo()
+        self.configure_committed(feedbackCommand=feedback(1, "boom"))
+        (self.root / "app.py").write_text("x = 1\n")
+        code, _, err = run_hook("red_guard.py", bash_event('bash --norc -c "git commit -am x"'), self.root)
         self.assertEqual(code, 2)
         self.assertIn("boom", err)
 

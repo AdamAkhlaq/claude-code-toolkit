@@ -47,3 +47,7 @@ Every consuming repo with `gatedCommands`, and every repo with a `feedbackComman
 ## Amendment 2026-10-24: building
 
 The review of T1 found the fix opened new bypasses and left rewordings the outcome promises, so two tickets were appended: T2 (the shell reader keeps every command boundary) and T3 (a gated command is caught behind any prefix or inside a quoted substitution), three tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.
+
+## Amendment 2026-10-24: three more tickets
+
+The second review, of `a90e0c2`, found eight more ways past the gate, so T4 (the shell reader splits words where bash does), T5 (a substitution the shell runs is read whole, in a heredoc too) and T6 (the gate never fails open on a long or nested call) were appended: six tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.

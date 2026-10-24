@@ -1,7 +1,7 @@
 ---
 id: "0003"
 slug: "fix-deploy-gate-bypass"
-status: accepted
+status: building
 originator: "Adam Akhlaq"
 accepted_by: "Adam Akhlaq"
 created: "2026-10-23"
@@ -41,3 +41,7 @@ A bug fix needs no spec or plan; this intent and its one ticket are the change.
 ## Affected users and systems
 
 Every consuming repo with `gatedCommands`. Code: `hooks/scripts/deploy_gate.py`, reusing the shell tokeniser `red-guard` added to `hooks/scripts/_common.py` in 0.5.0.
+
+## Amendment 2026-10-24: building
+
+The review of T1 found the fix opened new bypasses and left rewordings the outcome promises, so two tickets were appended: T2 (the shell reader keeps every command boundary) and T3 (a gated command is caught behind any prefix or inside a quoted substitution), three tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.

@@ -12,7 +12,7 @@ files:
     docs/changes/0003-fix-deploy-gate-bypass/intent.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_gate_never_fails_open_on_a_long_or_nested_call: with gatedCommands ["^git tag ", "^git push .*--force"], deploy_gate.py exits 2 on `env git push origin` followed by 70 refs and `--force`, exits 2 within 5 seconds on 40 `eval` words before `git tag v1`, exits 2 with a message saying the call is too long to read on a call of 200000 words, and exits 0 silently within 5 seconds on `env git add` followed by 5000 paths; and the `deploy_gate.py` entry in hooks/hooks.json has a timeout and `"onFailure": "block"`'
-status: in-progress
+status: reopened
 executed_by: single
 branch: ticket/0003-T6
 ---
@@ -66,3 +66,22 @@ Live check, 2026-10-24: a headless `claude --plugin-dir <this checkout> -p --per
 `git for-each-ref refs/tags` in the repo afterwards listed nothing.
 
 Found in the live check, outside this ticket's files: `_common.find_commit` recurses into the rest of the tokens from every `eval`, so a call with no commit in it costs twice as much per `eval` word (`is_git_commit` on 18 `eval` words before `git status`: 3.4 s). `red-guard`, `secret-guard` and `ticket-sync` all call it; `red-guard` blocks the call when its 600 s timeout runs out, the other two have no timeout and let it through, which is harmless as there is no commit to check. A call with a commit in it returns early and is fast, so it is not a bypass. Recorded for its own ticket.
+
+### Verifier 2026-10-24 16:36
+
+Verdict: reopen
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. Added on this branch (8c4f8f9), exercises the hook as a subprocess and reads `hooks/hooks.json`. Run against the hook and `hooks.json` from `change/0003-fix-deploy-gate-bypass` in a scratch copy, it fails at once: `AssertionError: 0 != 2` on the padded `env git push ... --force`.
+3. proving test run: exit 0, `Ran 1 test in 0.637s OK` (`python3 -m unittest tests.test_hooks.DeployGateTests.test_the_gate_never_fails_open_on_a_long_or_nested_call`)
+4. feedback command: exit 0, `Ran 78 tests in 9.224s OK` (`python3 -m unittest discover -s tests`)
+5. acceptance: 4 of 4 checked, none failed on its wording. Proving test passes (check 3); every other test passes and the test diff only adds the new test; README and `intent.md` say what the Context says (read in the diff); the CHANGELOG `[Unreleased]` entry says a call too long to read is blocked and the hook has a timeout with `"onFailure": "block"`. The README's "each pattern is matched ... against a line from each word in it that could name a program" is no longer true for the pattern below.
+6. scope: ok (CHANGELOG.md, README.md, intent.md, hooks/hooks.json, hooks/scripts/deploy_gate.py, tests/test_hooks.py, plus the ticket)
+7. tests intact: ok (no deleted lines, no skip or expected-failure markers)
+
+Regression found by probing the hook at this branch against the hook at `change/0003-fix-deploy-gate-bypass`: stripping one leading `^` and calling `match(line, offset)` leaves every other `^` in the pattern anchored to the start of the line, not the offset. With `gatedCommands: ["^git tag |^gh release "]`, `X=1 gh release create v1` and `sudo /usr/bin/gh release create v1` exit 0 on this branch and exit 2 on the integration branch. `^(git tag|gh release) ` and single-alternative patterns still block. A pattern that anchors with `\A` or puts `^` after an inline flag such as `(?i)` is not stripped at all, so it only ever matches at line start.
+
+Also found, present before this branch too, so not a regression: `echo` followed by 2000 nested `$(` around `git tag v1` crashes the hook with `RecursionError`, exit 1, on both branches; whether `"onFailure": "block"` covers exit 1 as well as a timeout was not checked. A single 5 MB word followed by `&& git tag v1` runs past 60 s, because the budget counts words, not characters; the 30 s timeout with `"onFailure": "block"` turns that into a block, but the hook does not block on its own budget first, as the Context asks.
+
+Reopen reason: a gated pattern with `^` on more than one alternative, such as `^git tag |^gh release `, now fails open behind an assignment, a wrapper or a path (`X=1 gh release create v1` exits 0, and exited 2 before this branch); anchor every `^` at the program word, or fall back to matching that pattern against a line that starts at the word, and add that case to the proving test.

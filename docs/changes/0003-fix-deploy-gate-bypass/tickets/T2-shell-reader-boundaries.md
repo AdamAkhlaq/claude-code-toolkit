@@ -10,7 +10,9 @@ files:
     docs/changes/0003-fix-deploy-gate-bypass/intent.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_shell_reader_keeps_every_command_boundary: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `git tag v1` to `git tag v4` on the line after, in turn, `true # note`, `echo $((1<<2))`, `# see <<EOF` and a `cat <<EOF` whose closing `EOF` never comes, and on `true;>out git tag v5`, `true&&>/dev/null git tag v6`, `` echo `git tag v7` `` and `echo $''it\''s''; git tag v8`'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T2
 ---
 
 ## Context

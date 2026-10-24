@@ -10,7 +10,9 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_substitution_the_shell_runs_is_read_whole: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `cat <<EOF` with `$(git tag v1)` as its body, the same with a backticked `git tag v2`, `echo "$(echo ")"; git tag v3)"` and `echo "$(case a in a) git tag v4;; esac)"`, and exits 0 silently on `cat <<''EOF''` with `$(git tag v1)` as its body'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T5
 ---
 
 ## Context

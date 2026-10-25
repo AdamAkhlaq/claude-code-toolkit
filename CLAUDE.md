@@ -26,6 +26,7 @@ This repo is the `toolkit` Claude Code plugin, served from its own marketplace `
 - Main accepts pull requests only. Branch as `change/<NNNN>-<slug>`.
 - Every release bumps `version` in `.claude-plugin/plugin.json`, moves the `[Unreleased]` entries in `CHANGELOG.md` under the new version, and tags `v<version>` after merge.
 - When a skill, hook or agent is added, renamed or removed: update the README's component tables, the spec of the change that introduced it, and the "Enforced by" column in `PHILOSOPHY.md`.
+- When a review finds a shell form a hook's reader misses, check its whole family in bash with a stub program (quoting, expansion, heredoc delimiters, nested substitutions, comments) before fixing, not only the reported case.
 
 ## Never
 

@@ -10,7 +10,7 @@ This repo is the `toolkit` Claude Code plugin, served from its own marketplace `
 - `hooks/hooks.json` and `hooks/scripts/*.py`: every hook reads `.claude/toolkit.json` from the consuming project and exits 0 with no output when it is absent. Python standard library only.
 - `bin/toolkit-graph`: the deterministic graph tool. Python standard library only.
 - `templates/`: files the skills copy into a consuming repo.
-- `docs/changes/`, `docs/adr/`, `docs/incidents/`: this repo's own artifacts. `GLOSSARY.md` holds the workflow's vocabulary.
+- `docs/changes/`, `docs/adr/`, `docs/incidents/`: this repo's own artifacts. `docs/backlog.md` holds follow-ups not yet taken into a change. `GLOSSARY.md` holds the workflow's vocabulary.
 - `tests/`: unit tests for the hooks and the graph tool.
 
 ## Commands
@@ -26,7 +26,8 @@ This repo is the `toolkit` Claude Code plugin, served from its own marketplace `
 - Main accepts pull requests only. Branch as `change/<NNNN>-<slug>`.
 - Every release bumps `version` in `.claude-plugin/plugin.json`, moves the `[Unreleased]` entries in `CHANGELOG.md` under the new version, and tags `v<version>` after merge.
 - When a skill, hook or agent is added, renamed or removed: update the README's component tables, the spec of the change that introduced it, and the "Enforced by" column in `PHILOSOPHY.md`.
-- When a review finds a shell form a hook's reader misses, check its whole family in bash with a stub program (quoting, expansion, heredoc delimiters, nested substitutions, comments) before fixing, not only the reported case.
+- When a review finds a shell form a hook's reader misses, check its whole family in bash with a stub program (quoting, expansion, heredoc delimiters, nested substitutions, comments) before fixing, not only the reported case, and probe the new code's own boundaries (each new branch's trigger characters, ranges and escapes) against bash before handing it on.
+- A follow-up found while working a ticket or a review gets a home in the same change: a ticket in the graph or a line in `docs/backlog.md`, never only a mention in Evidence.
 
 ## Never
 

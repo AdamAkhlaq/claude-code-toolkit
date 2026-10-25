@@ -267,7 +267,7 @@ class DeployGateTests(HookCase):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command[:20])
             self.assertLess(time.monotonic() - started, 5, command[:20])
-        config =json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        config = json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
         entries = [hook for group in config["hooks"]["PreToolUse"] for hook in group["hooks"] if "deploy_gate.py" in hook["command"]]
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0].get("onFailure"), "block")

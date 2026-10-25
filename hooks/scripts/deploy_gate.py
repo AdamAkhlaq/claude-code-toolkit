@@ -8,7 +8,7 @@ could name a program, so `^git tag ` also catches `cd . && git tag v1` and
 `sudo git tag v1`. A call too long or too deeply nested to read is blocked
 rather than half read.
 A script fed to an interpreter, such as `echo 'git tag v1' | bash`, is not
-read.
+read, nor is a word built from a variable, such as `git $t v1`.
 """
 
 import os

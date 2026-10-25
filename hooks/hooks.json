@@ -33,7 +33,9 @@
           },
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/deploy_gate.py\""
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/deploy_gate.py\"",
+            "timeout": 30,
+            "onFailure": "block"
           }
         ]
       }

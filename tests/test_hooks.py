@@ -217,6 +217,62 @@ class DeployGateTests(HookCase):
         for command in ("cat <<'EOF'\n$(git tag v1)\nEOF", 'cat <<"EOF"\n`git tag v1`\nEOF', "cat <<EOF\ngit tag v1\nEOF"):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
 
+    def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
+        self.configure(gatedCommands=["^git tag ", "^git push .*--force"])
+        refs = " ".join(f"r{n}" for n in range(70))
+        code, _, err = run_hook("deploy_gate.py", bash_event(f"env git push origin {refs} --force"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("release authorisation", err)
+        started = time.monotonic()
+        code, _, err = run_hook("deploy_gate.py", bash_event("eval " * 40 + "git tag v1"), self.root)
+        self.assertEqual(code, 2)
+        self.assertLess(time.monotonic() - started, 5)
+        code, _, err = run_hook("deploy_gate.py", bash_event("x " * 200000), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("too long to read", err)
+        paths = " ".join(f"src/module_{n}/file_{n}.py" for n in range(5000))
+        started = time.monotonic()
+        self.assertEqual(run_hook("deploy_gate.py", bash_event(f"env git add {paths}"), self.root), (0, "", ""))
+        self.assertLess(time.monotonic() - started, 5)
+        self.configure(gatedCommands=["^npm publish|^gh release "])
+        code, _, err = run_hook("deploy_gate.py", bash_event("X=1 gh release create v1"), self.root)
+        self.assertEqual(code, 2)
+        for pattern in ["(?i)^gh release ", r"\Agh release ", "^(?:npm publish|gh release )"]:
+            self.configure(gatedCommands=[pattern])
+            code, _, err = run_hook("deploy_gate.py", bash_event("sudo /usr/bin/gh release create v1"), self.root)
+            self.assertEqual(code, 2, pattern)
+        self.configure(gatedCommands=["^git tag "])
+        code, _, err = run_hook("deploy_gate.py", bash_event("echo " + "$(" * 2000 + "git tag v1" + ")" * 2000), self.root)
+        self.assertEqual(code, 2)
+        self.assertNotIn("Traceback", err)
+        started = time.monotonic()
+        code, _, err = run_hook("deploy_gate.py", bash_event("x" * 5_000_000 + " && git tag v1"), self.root)
+        self.assertEqual(code, 2)
+        self.assertLess(time.monotonic() - started, 5)
+        started = time.monotonic()
+        code, out, err = run_hook("deploy_gate.py", bash_event("x " * 99_000 + "&& git status"), self.root)
+        self.assertEqual((code, out, err), (0, "", ""))
+        self.assertLess(time.monotonic() - started, 5)
+        for command in (
+            "SHELL=/bin/bash eval 'git tag v1'",
+            'PAGER=/bin/sh eval "git tag v1"',
+            "SHELL=/bin/bash command eval 'git tag v1'",
+            "X=/bin/sh ionice -c 2 bash -c 'git tag v1'",
+            "X=/bin/eval Y=\"'\" eval 'git tag v1'",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+        for command in ("sh " * 20_000 + "-c 'git tag v1'", "x" * 999_000 + " && git tag v1", "'" + "x " * 450_000):
+            started = time.monotonic()
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command[:20])
+            self.assertLess(time.monotonic() - started, 5, command[:20])
+        config = json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        entries = [hook for group in config["hooks"]["PreToolUse"] for hook in group["hooks"] if "deploy_gate.py" in hook["command"]]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].get("onFailure"), "block")
+        self.assertGreater(entries[0].get("timeout", 0), 0)
+
     def test_a_gated_command_is_caught_behind_a_prefix(self):
         self.configure(gatedCommands=["^git tag "])
         for command in (

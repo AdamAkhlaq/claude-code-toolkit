@@ -3,9 +3,12 @@
 Blocks any command matching a pattern in `gatedCommands` unless a human has
 authorised a release, either by exporting RELEASE_AUTHORIZED or by creating
 `.claude/.release-authorized`. Each pattern is matched against the whole
-command and against a line from each word that could name a program, so
-`^git tag ` also catches `cd . && git tag v1` and `sudo git tag v1`. A script
-fed to an interpreter, such as `echo 'git tag v1' | bash`, is not read.
+command and against each simple command in it, anchored at every word that
+could name a program, so `^git tag ` also catches `cd . && git tag v1` and
+`sudo git tag v1`. A call too long or too deeply nested to read is blocked
+rather than half read.
+A script fed to an interpreter, such as `echo 'git tag v1' | bash`, is not
+read.
 """
 
 import os
@@ -23,43 +26,124 @@ def authorised(root) -> bool:
     return (root / MARKER_RELPATH).exists()
 
 
-WINDOW = 64
+BUDGET = 100_000
+# shlex builds a word one character at a time, so reading a word costs the square of its length: 300,000 characters is read in under a second.
+CHARACTERS = 300_000
 
 
-def program_lines(command: str) -> list:
-    """The lines the patterns are matched against, one from each word of each simple command in `command` that could name a program.
+class Unreadable(Exception):
+    """The call holds more words or characters than the gate reads: it is blocked rather than half read."""
 
-    A line is the program's basename and the words after it, so `^git tag `
-    catches `X=1 git tag`, `sudo git tag` and `then git tag` alike. A word
-    holding whitespace came from quotes and names no program, which keeps
-    `echo "git tag v1"` silent. A line from a simple command's first word
-    is whole; one from a later word stops after WINDOW words, so a long
-    argument list cannot make the lines grow with its square. `git` is read
-    past its global options as well, and the scripts of `bash -c`, `eval`,
-    `$(...)` and backticks are read as commands of their own, in the body of
-    a heredoc with an unquoted delimiter too.
+
+def readings(command: str, budget=None, seen=None) -> list:
+    """Each simple command in `command` as a line of its words, with the offset in the line where each word that could name a program starts, by basename.
+
+    A pattern anchored with `^` is matched at every one of those offsets, so
+    `^git tag ` catches `X=1 git tag`, `sudo /usr/bin/git tag` and `then git
+    tag` alike, and the line stays whole however long it is, in one string per
+    simple command. A word holding whitespace came from quotes and names no
+    program, which keeps `echo "git tag v1"` silent. `git` is read past its
+    global options as well, and the scripts of `eval`, `bash -c`, `$(...)` and
+    backticks are read as commands of their own, in the body of a heredoc with
+    an unquoted delimiter too. Every `eval` or shell word is read into, since
+    an earlier one may be an assignment's value or a wrapper's argument, such
+    as `SHELL=/bin/bash eval '...'`, and a script already read in the call is
+    not read again. Every word read or scanned counts against BUDGET and every
+    character against CHARACTERS, charged before it is parsed, and past either
+    the call is Unreadable.
     """
-    lines = []
+    budget = [BUDGET, CHARACTERS] if budget is None else budget
+    seen = set() if seen is None else seen
+    spend(budget, 0, len(command))
+    found = []
     bodies = []
     inners = substitutions(shell_source(command, bodies))
     for body in bodies:
         inners.extend(substitutions(body, quotes=False))
     for inner in inners:
-        lines.extend(program_lines(inner))
+        found.extend(read_once(inner, budget, seen))
     for words in simple_commands(command):
+        spend(budget, len(words), 0)
+        line = " ".join(words)
+        starts = []
+        offset = 0
         for index, word in enumerate(words):
-            if not word or word.startswith("-") or any(char.isspace() for char in word):
-                continue
-            name = os.path.basename(word)
-            rest = words[index + 1 :] if index == 0 else words[index + 1 : index + 1 + WINDOW]
-            lines.append(" ".join([name, *rest]))
-            if name == "git":
-                lines.append(" ".join(["git", *git_options(rest)[1]]))
-            elif name == "eval":
-                lines.extend(program_lines(" ".join(words[index + 1 :])))
-            elif name in SHELLS and (script := shell_script(words[index + 1 :])) is not None:
-                lines.extend(program_lines(script))
-    return lines
+            end = offset + len(word) + 1
+            if word and not word.startswith("-") and not any(char.isspace() for char in word):
+                name = os.path.basename(word)
+                starts.append(offset + len(word) - len(name))
+                if name == "git":
+                    after = git_options(words[index + 1 :])[1]
+                    spend(budget, len(after), sum(map(len, after)))
+                    found.append((" ".join(["git", *after]), [0]))
+                elif name == "eval":
+                    spend(budget, 0, len(line) - end + 1)
+                    found.extend(read_once(line[end:], budget, seen))
+                elif name in SHELLS:
+                    spend(budget, len(words) - index, 0)
+                    script = shell_script(words[index + 1 :])
+                    if script is not None:
+                        found.extend(read_once(script, budget, seen))
+            offset = end
+        found.append((line, starts))
+    return found
+
+
+def read_once(script: str, budget: list, seen: set) -> list:
+    if script in seen:
+        return []
+    seen.add(script)
+    return readings(script, budget, seen)
+
+
+def spend(budget: list, words: int, characters: int) -> None:
+    budget[0] -= words
+    budget[1] -= characters
+    if budget[0] < 0 or budget[1] < 0:
+        raise Unreadable
+
+
+def matches(pattern: str, command: str, lines: list) -> bool:
+    """True when `pattern` matches the raw command, or any line, or, with its anchors taken out, any line at a program word.
+
+    Taking every anchor out, not only a leading one, lets each alternative of
+    `^npm publish|^gh release ` start at a program word. It only widens where
+    the pattern may start, so the gate errs toward blocking.
+    """
+    whole = re.compile(pattern)
+    bare = without_anchors(pattern)
+    anchored = re.compile(bare) if bare != pattern else None
+    if whole.search(command):
+        return True
+    for line, starts in lines:
+        if whole.search(line) or (anchored and any(anchored.match(line, start) for start in starts)):
+            return True
+    return False
+
+
+def without_anchors(pattern: str) -> str:
+    """`pattern` without each `^` or `\\A` that anchors, leaving an escaped `\\^` and a `^` inside `[...]`."""
+    kept = []
+    in_class = False
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "\\":
+            if in_class or pattern[index + 1 : index + 2] != "A":
+                kept.append(pattern[index : index + 2])
+            index += 2
+            continue
+        if in_class:
+            if char == "]" and not (kept[-1] == "[" or kept[-1:] == ["^"] and kept[-2:-1] == ["["]):
+                in_class = False
+        elif char == "[":
+            in_class = True
+        elif char == "^":
+            index += 1
+            continue
+        kept.append(char)
+        index += 1
+    return "".join(kept)
 
 
 def simple_commands(command: str) -> list:
@@ -170,10 +254,22 @@ def main() -> int:
     command = tool_input(read_event()).get("command") or ""
     if not command:
         return 0
-    candidates = [command, *program_lines(command)]
+    try:
+        lines = readings(command)
+    except (Unreadable, RecursionError):
+        if authorised(root):
+            return 0
+        return block(
+            f"Blocked: this Bash call is too long to read for gated commands (over {BUDGET} words or {CHARACTERS} characters, or nested too deep), "
+            "so deploy-gate cannot tell whether it runs one. Split it into shorter calls."
+        )
+    except Exception as exc:
+        if authorised(root):
+            return 0
+        return block(f"Blocked: deploy-gate could not read this Bash call ({type(exc).__name__}: {exc}), so it cannot tell whether it runs a gated command. Rephrase or split it.")
     for pattern in patterns:
         try:
-            matched = any(re.search(pattern, candidate) for candidate in candidates)
+            matched = matches(pattern, command, lines)
         except re.error:
             print(f"toolkit: invalid regex in gatedCommands: {pattern!r}", file=sys.stderr)
             continue

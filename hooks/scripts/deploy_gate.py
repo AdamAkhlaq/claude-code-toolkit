@@ -27,14 +27,15 @@ def authorised(root) -> bool:
 
 
 BUDGET = 100_000
-CHARACTERS = 1_000_000
+# shlex builds a word one character at a time, so reading a word costs the square of its length: 300,000 characters is read in under a second.
+CHARACTERS = 300_000
 
 
 class Unreadable(Exception):
     """The call holds more words or characters than the gate reads: it is blocked rather than half read."""
 
 
-def readings(command: str, budget=None) -> list:
+def readings(command: str, budget=None, seen=None) -> list:
     """Each simple command in `command` as a line of its words, with the offset in the line where each word that could name a program starts, by basename.
 
     A pattern anchored with `^` is matched at every one of those offsets, so
@@ -44,13 +45,15 @@ def readings(command: str, budget=None) -> list:
     program, which keeps `echo "git tag v1"` silent. `git` is read past its
     global options as well, and the scripts of `eval`, `bash -c`, `$(...)` and
     backticks are read as commands of their own, in the body of a heredoc with
-    an unquoted delimiter too. The first `eval` or shell in a simple command
-    is read into once, and that reading meets any later one, so nesting costs
-    no more than its length. Every word read counts against BUDGET and every
+    an unquoted delimiter too. Every `eval` or shell word is read into, since
+    an earlier one may be an assignment's value or a wrapper's argument, such
+    as `SHELL=/bin/bash eval '...'`, and a script already read in the call is
+    not read again. Every word read or scanned counts against BUDGET and every
     character against CHARACTERS, charged before it is parsed, and past either
     the call is Unreadable.
     """
     budget = [BUDGET, CHARACTERS] if budget is None else budget
+    seen = set() if seen is None else seen
     spend(budget, 0, len(command))
     found = []
     bodies = []
@@ -58,13 +61,14 @@ def readings(command: str, budget=None) -> list:
     for body in bodies:
         inners.extend(substitutions(body, quotes=False))
     for inner in inners:
-        found.extend(readings(inner, budget))
+        found.extend(read_once(inner, budget, seen))
     for words in simple_commands(command):
         spend(budget, len(words), 0)
+        line = " ".join(words)
         starts = []
         offset = 0
-        read_into = False
         for index, word in enumerate(words):
+            end = offset + len(word) + 1
             if word and not word.startswith("-") and not any(char.isspace() for char in word):
                 name = os.path.basename(word)
                 starts.append(offset + len(word) - len(name))
@@ -72,15 +76,24 @@ def readings(command: str, budget=None) -> list:
                     after = git_options(words[index + 1 :])[1]
                     spend(budget, len(after), sum(map(len, after)))
                     found.append((" ".join(["git", *after]), [0]))
-                elif not read_into and (name == "eval" or name in SHELLS):
-                    read_into = True
-                    rest = words[index + 1 :]
-                    script = " ".join(rest) if name == "eval" else shell_script(rest)
+                elif name == "eval":
+                    spend(budget, 0, len(line) - end + 1)
+                    found.extend(read_once(line[end:], budget, seen))
+                elif name in SHELLS:
+                    spend(budget, len(words) - index, 0)
+                    script = shell_script(words[index + 1 :])
                     if script is not None:
-                        found.extend(readings(script, budget))
-            offset += len(word) + 1
-        found.append((" ".join(words), starts))
+                        found.extend(read_once(script, budget, seen))
+            offset = end
+        found.append((line, starts))
     return found
+
+
+def read_once(script: str, budget: list, seen: set) -> list:
+    if script in seen:
+        return []
+    seen.add(script)
+    return readings(script, budget, seen)
 
 
 def spend(budget: list, words: int, characters: int) -> None:

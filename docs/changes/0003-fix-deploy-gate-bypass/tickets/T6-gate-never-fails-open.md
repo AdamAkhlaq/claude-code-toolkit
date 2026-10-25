@@ -150,3 +150,44 @@ bash runs the quoted script in each of these. `sudo -u sh eval '...'` and `env -
 The rest of the probe found no other regressions. The cases checked include multi-alternative and `\A` anchors, `(?m)`, `[^...]`, wrappers, keywords, subshells, substitutions, quoted mentions, 5000 nested `eval` (0.5 s, exit 2; the integration hook crashed with exit 1 after 18.9 s), and large heredoc file writes, which were not falsely blocked. One limit, the same on both branches: a single word just under the character budget takes about 8.5 s here (250k characters 1.0 s, 500k 2.7 s, 999k 8.6 s), which grows faster than linearly. That is under the 30 s timeout, and the timeout blocks anyway, but on a slower machine it leaves less room than "well before that timeout".
 
 Reopen reason: a shell-named word earlier in a simple command now hides a later quoted `eval` (`SHELL=/bin/bash eval 'git tag v1'` exits 0 on this branch and exited 2 before it). Set the read-into flag only when a script was actually read, or keep separate flags for `eval` and for shells, and add this case to the proving test.
+
+### Evidence 2026-10-25 16:31 (second retry)
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+..............................................................................
+----------------------------------------------------------------------
+Ran 78 tests in 10.315s
+
+OK
+```
+
+The reopen's cases, plus a decoy `-c` and two long-word timings, were added to the proving test and committed failing before the code changed (f36b24d). Probed one at a time against the hook from 9a54a19, then after the fix:
+
+| Case                                          | Before          | After           |
+| --------------------------------------------- | --------------- | --------------- |
+| `SHELL=/bin/bash eval 'git tag v1'`           | exit 0          | exit 2          |
+| `PAGER=/bin/sh eval "git tag v1"`             | exit 0          | exit 2          |
+| `SHELL=/bin/bash command eval 'git tag v1'`   | exit 0          | exit 2          |
+| `X=/bin/sh ionice -c 2 bash -c 'git tag v1'`  | exit 0          | exit 2          |
+| `X=/bin/eval Y="'" eval 'git tag v1'`         | exit 2          | exit 2          |
+| 20000 `sh` words, then `-c 'git tag v1'`      | exit 2 in 0.1 s | exit 2 in 0.1 s |
+| a 999000-character word, then `&& git tag v1` | exit 2 in 8.5 s | exit 2 in 0.0 s |
+| an unclosed `'`, then 450000 `x ` words       | exit 2 in 6.3 s | exit 2 in 0.0 s |
+
+The `ionice` case is a reopen of the same kind the verifier did not name: setting the flag only when a script was read would not have fixed it, since the decoy `X=/bin/sh` reads the wrapper's `-c 2` as its script. So the single `read_into` flag is gone: every `eval` and shell word in a simple command is read into, and a script already read in the call is not read again (`read_once`, a `seen` set shared across the recursion). The words a shell word scans for its `-c` and the characters an `eval` word's rest holds are charged to the budget before they are sliced, so every bit of work stays counted; a chain of `eval` words costs more than its length and is blocked past the budget (200 `eval` words in 0.1 s), which no real call reaches.
+
+The near-1M-character word: profiled, the time is in `shlex.read_token`, which builds a word one character at a time and so costs the square of its length (1.0 s at 250k, 2.7 s at 500k, 8.6 s at 999k). Replacing the lexer `_common` shares with the other hooks is a larger change than this ticket; `CHARACTERS` goes from 1,000,000 to 300,000 instead, with a comment saying why. Worst shapes under the new budget, all decided within 1.3 s: a 299000-character word (exit 0, 1.2 s), an unclosed quote and 149000 words (exit 2, 1.3 s), `bash` and 99000 `-c` (exit 2, 0.3 s), 60000 `git` words (exit 2, 0.2 s), 40000 `$(a)` (exit 0, 0.4 s). Calls that must still run, run: a 49000-character `git commit -m`, the same message by heredoc, `bash -c '...'` with 5000 arguments, `brew install bash zsh fish`, a quoted mention of `bash -c "git tag v1"`. README and CHANGELOG say 300,000 characters and that every `eval` and shell word is read into. `claude plugin validate .` passes, with the same three warnings as before this branch.
+
+Live check, 2026-10-25: a headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` session in a throwaway repo with `"gatedCommands": ["^git tag "]`, no `RELEASE_AUTHORIZED` and no marker, one Bash call per command. macOS has no `ionice`, so the decoy case uses a function that drops its first two arguments; against the hook from 9a54a19 that call exits 0.
+
+| Command                                                         | Result                                                                                                                     |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `SHELL=/bin/bash eval 'git tag v1'`                             | blocked: "Blocked: 'SHELL=/bin/bash eval 'git tag v1'' matches gated command pattern '^git tag ' in .claude/toolkit.json." |
+| `PAGER=/bin/sh eval "git tag v2"`                               | blocked, same message                                                                                                      |
+| `SHELL=/bin/bash command eval 'git tag v3'`                     | blocked, same message                                                                                                      |
+| `f() { shift 2; "$@"; }; X=/bin/sh f -c 2 bash -c 'git tag v4'` | blocked, same message                                                                                                      |
+
+`git for-each-ref refs/tags` in the repo afterwards listed nothing.

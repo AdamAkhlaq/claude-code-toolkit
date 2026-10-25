@@ -14,7 +14,7 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_reader_reads_its_own_edges_as_bash_does: with gatedCommands ["^git tag "], deploy_gate.py exits 2 as a gated command on `echo $''\c''; git tag v2; echo ''x''`, `echo {W..a..5}''x''; git tag v3; echo ''y''` and on `cat <<$''EOF''`, `EOF`, `git tag v4` and `$EOF` on four lines, exits 2 with a message saying bash and zsh read the call differently on `echo $$''\'' ; git tag v1 ; echo "''"` and on `cat <<$"EOF"`, `EOF`, `git tag v4` and `$EOF` on four lines, and exits 0 silently on `echo $$''git tag v5''` and on `cat <<$''EOF''`, `git tag v6` and `EOF` on three lines; in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py blocks with the feedback output on the `$''\c''`, range and heredoc shapes with `git commit -am x` in place of the tag, and blocks with a message starting "Blocked: red-guard could not read" on the `$$''\''` shape and on a call past the brace limit that commits nothing; and in SecretGuardTests.test_a_commit_it_cannot_read_is_blocked and TicketSyncTests.test_a_commit_it_cannot_read_is_blocked, secret_guard.py with an AWS key staged and ticket_sync.py with a change in progress each exit 2 on `git commit -m x; echo ` followed by 14 `{a,b}` groups, with a message naming the hook and no traceback'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T9
 ---
@@ -86,3 +86,16 @@ Live check, 2026-10-25: a headless `claude --plugin-dir <this checkout> -p --per
 | `mkdir -p src/{a,b} && ls src`            | ran, printed `a` and `b`                                                                          |
 
 The same commit in a second repo whose `toolkit.json` has no `gatedCommands` was blocked by `secret-guard`: "Blocked: secret-guard could not read this Bash call (Unreadable), so it cannot tell whether it commits a secret. Split or rephrase it." `git for-each-ref refs/tags` listed nothing in the first repo, and neither log held more than its first commit.
+
+### Verifier 2026-10-25 22:13
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok (id, title, blocked_by, files, proves, status in-progress, executed_by, branch, Evidence with quoted `python3 -m unittest discover -s tests` run)
+2. proving test present and meaningful: ok. The four named tests were added on this branch and run the hook scripts as subprocesses. With this branch's `tests/test_hooks.py` over the integration branch's hooks, four fail: deploy-gate `0 != 2` on `echo $'\c'; git tag v2; echo 'x'`, red-guard `0 != 2` on the `$'\c'` commit, and secret-guard and ticket-sync `1 != 2` on the brace-limit commit. A stub `git` under `/bin/bash` and `/bin/zsh` confirmed the test's classes: `$'\c'`, `{W..a..5}'x'` and `<<$'EOF'` run the tag in both shells, `$$'\'` and `<<$"EOF"` run it in bash only, and `$$'git tag v5'` and the `<<$'EOF'` body run nothing.
+3. proving test run: exit 0, "Ran 5 tests in 2.740s OK" (the four named tests plus `NoConfigTests.test_every_hook_is_silent_without_config`)
+4. feedback command: exit 0, "Ran 83 tests in 13.181s OK"
+5. acceptance: 5 of 5 checked, none failed. The proving test passes (check 3). No test line was removed (check 7) and the full suite passes. `NoConfigTests` has brace-limit cases for `secret_guard.py` and `ticket_sync.py`. The README rows for `secret-guard` and `ticket-sync` say they block a commit they cannot read. The `red-guard` row says it blocks "a Bash call it cannot read", and its config-key column carries the `feedbackCommand` condition. The `[Unreleased]` CHANGELOG entry says `secret-guard` and `ticket-sync` block a commit they cannot read.
+6. scope: ok (all changed files are in `files`, plus the ticket file)
+7. tests intact: ok (no `-` lines in the test diff, no skip or expected-failure markers)

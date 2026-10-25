@@ -195,10 +195,37 @@ def ansi_c_escape(command: str, index: int) -> tuple:
 
 
 def ansi_c_close(command: str, index: int) -> int:
-    """The index of the `'` that closes the `$'...'` span holding `index`, where bash stops reading the word's text after a NUL."""
+    """The index of the `'` that closes the `$'...'` span whose text starts at `index`, or the end of `command`.
+
+    A backslash always takes the character after it, as bash and zsh read it,
+    so `$'\\c'` closes at its second quote however `\\c` decodes.
+    """
     while index < len(command) and command[index] != "'":
         index += 2 if command[index] == "\\" else 1
-    return index
+    return min(index, len(command))
+
+
+def ansi_c_text(span: str) -> str:
+    """The text of a `$'...'` span between its quotes, decoded as bash decodes it, up to a NUL, where bash stops reading the word's text."""
+    text = []
+    index = 0
+    while index < len(span):
+        if span[index] == "\\":
+            decoded, length = ansi_c_escape(span, index)
+            text.append(decoded)
+            index += length
+        else:
+            text.append(span[index])
+            index += 1
+    return "".join(text).split("\0", 1)[0]
+
+
+def dollar_run(command: str, index: int) -> int:
+    """The index just past the run of `$` that starts at `index`."""
+    end = index
+    while command.startswith("$", end):
+        end += 1
+    return end
 
 
 BRACES = 10_000
@@ -207,6 +234,14 @@ BRACE_CHARACTERS = 1_000_000
 
 class Unreadable(Exception):
     """A call the reader will not finish, such as one whose braces expand past BRACES words: a hook blocks it rather than half reading it."""
+
+
+class ShellsDiffer(Unreadable):
+    """A call bash and zsh read differently, such as `$$'\\''`, which bash reads as a plain quote after `$$` and zsh as a `$'...'` quote: a hook blocks it rather than read it one way."""
+
+
+def read_error(exc: Exception) -> str:
+    return str(exc) if isinstance(exc, ShellsDiffer) else type(exc).__name__
 
 
 def expand_braces(script: str) -> str:
@@ -345,7 +380,13 @@ SEQUENCE = re.compile(r"(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?|([A-Za-z])\.\.([A-Za-
 
 
 def sequence(body: str, budget: list):
-    """The words of a `{x..y}` or `{x..y..step}` sequence of integers or single letters, or None when `body` is not one."""
+    """The words of a `{x..y}` or `{x..y..step}` sequence of integers or single letters, or None when `body` is not one.
+
+    A range between letters of different case covers the characters between
+    them, such as `[`, `\\` and a backtick in `{Z..a}`, so every character
+    that is not a letter or digit is escaped: the expansion goes back into
+    source text that is read again, and must not open or close a quote there.
+    """
     match = SEQUENCE.fullmatch(body)
     if not match:
         return None
@@ -355,9 +396,9 @@ def sequence(body: str, budget: list):
     spend_braces(budget, abs(end - start) // step + 1, 0)
     values = range(start, end + 1, step) if start <= end else range(start, end - 1, -step)
     if first is None:
-        return [chr(value) for value in values]
+        return [re.sub(r"[^A-Za-z0-9]", r"\\\g<0>", chr(value)) for value in values]
     width = max(len(first), len(last)) if any(re.match(r"-?0\d", number) for number in (first, last)) else 0
-    return [f"{value:0{width}d}" for value in values]
+    return [f"{value:0{width}d}".replace("-", "\\-") for value in values]
 
 
 def spend_braces(budget: list, words: int, characters: int) -> None:
@@ -373,7 +414,9 @@ def heredoc_at(command: str, index: int):
     The delimiter is the whole word after `<<`, up to whitespace or an
     operator, with its quotes removed, and the body expands only when no quote
     or backslash appears anywhere in it, as in bash: `<<E'OF'` ends at a line
-    `EOF` and is literal, `<<E:OF` ends at a line `E:OF`.
+    `EOF` and is literal, `<<E:OF` ends at a line `E:OF`. A `$'...'` span is
+    decoded, so `<<$'EOF'` ends at a line `EOF`. bash and zsh end `<<$"EOF"`
+    and `<<$$'EOF'` at different lines, so those raise ShellsDiffer.
     """
     if not command.startswith("<<", index) or command.startswith("<<<", index):
         return None
@@ -386,7 +429,20 @@ def heredoc_at(command: str, index: int):
     quoted = False
     while position < len(command) and command[position] not in " \t\n;&|()<>":
         char = command[position]
-        if char == "\\":
+        end = dollar_run(command, position)
+        if end > position and command[end : end + 1] not in ("'", '"'):
+            parts.append(command[position:end])
+            position = end
+        elif end > position:
+            if end - position > 1 or command[end] == '"':
+                raise ShellsDiffer(f"bash and zsh end a heredoc whose delimiter starts {command[position:end + 1]} at different lines")
+            quoted = True
+            close = ansi_c_close(command, end + 1)
+            if close >= len(command):
+                return None
+            parts.append(ansi_c_text(command[end + 1 : close]))
+            position = close + 1
+        elif char == "\\":
             quoted = True
             parts.append(command[position + 1 : position + 2])
             position += 2
@@ -417,7 +473,10 @@ def shell_source(command: str, bodies=None) -> str:
     line never comes keeps its body, so a missing delimiter cannot hide the
     lines after it. When `bodies` is a list, the body of each heredoc whose
     delimiter is unquoted is appended to it: the shell still runs `$(...)` and
-    backticks there.
+    backticks there. Each `$'...'` span is written as the plain single-quoted
+    text it decodes to. After an even run of `$`, bash reads a plain quote and
+    zsh a `$'...'` one, so where a backslash makes them end it apart, the call
+    raises ShellsDiffer.
     """
     kept = []
     pending = []
@@ -431,26 +490,31 @@ def shell_source(command: str, bodies=None) -> str:
         char = command[index]
         starts_word = at_word_start
         at_word_start = False
-        if char == "\\" and quote == "$'":
-            text, length = ansi_c_escape(command, index)
-            if "\0" in text:
-                index = ansi_c_close(command, index)
-                continue
-            kept.append(text.replace("'", "'\\''"))
-            index += length
-            continue
         if char == "\\" and quote != "'":
             if command[index + 1 : index + 2] != "\n":
                 kept.append(command[index : index + 2])
             index += 2
             continue
         if quote:
-            if char == quote[-1]:
+            if char == quote:
                 quote = ""
-        elif command.startswith("$'", index):
-            quote = "$'"
-            kept.append("'")
-            index += 2
+        elif char == "$" and command[index + 1 : index + 2] in ("$", "'"):
+            end = dollar_run(command, index)
+            if not command.startswith("'", end):
+                kept.append(command[index : end - 1])
+                index = end - 1
+                continue
+            if (end - index) % 2:
+                close = ansi_c_close(command, end + 1)
+                text = ansi_c_text(command[end + 1 : close]).replace("'", "'\\''")
+                kept.append(command[index : end - 1] + "'" + text + ("'" if close < len(command) else ""))
+                index = close + 1
+                continue
+            plain = command.find("'", end + 1)
+            if plain != -1 and "\\" in command[end + 1 : plain]:
+                raise ShellsDiffer(f"bash and zsh read {command[index:plain + 1]} differently: bash as a plain quote after $$, zsh as a $'...' quote")
+            kept.append(command[index:end])
+            index = end
             continue
         elif char in "'\"":
             quote = char
@@ -493,7 +557,7 @@ def shell_source(command: str, bodies=None) -> str:
         elif char == "<" and not arithmetic and not brackets and (heredoc := heredoc_at(command, index)):
             end, strip_tabs, delimiter, expands = heredoc
             pending.append((strip_tabs, delimiter, expands))
-            kept.append(command[index:end])
+            kept.append(command[index:end] if expands else "<<" + "-" * strip_tabs + "'" + delimiter.replace("'", "'\\''") + "'")
             index = end
             continue
         kept.append(char)

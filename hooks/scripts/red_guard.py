@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 
-from _common import DEFAULT_TEST_GLOBS, block, commit_checkout, first_match, git, git_options, is_git_commit, is_operator, load_config, project_dir, read_event, same_repository, shell_tokens, tool_input
+from _common import DEFAULT_TEST_GLOBS, block, commit_checkout, first_match, git, git_options, is_git_commit, is_operator, load_config, project_dir, read_error, read_event, same_repository, shell_tokens, tool_input
 
 TAIL_LINES = 40
 LIMIT_SECONDS = 570
@@ -147,7 +147,7 @@ def main() -> int:
         config = load_config(project_dir())
         if not (config and config.get("feedbackCommand")):
             return 0
-        return block(f"Commit stopped: red-guard could not read this Bash call ({type(exc).__name__}), so it cannot tell whether it commits. Split or rephrase it.")
+        return block(f"Blocked: red-guard could not read this Bash call ({read_error(exc)}), so it cannot tell whether it commits. Split or rephrase it.")
     try:
         return guard(event, command)
     except Exception as exc:

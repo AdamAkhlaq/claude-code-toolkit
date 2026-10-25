@@ -242,6 +242,11 @@ class DeployGateTests(HookCase):
             self.assertIn("release authorisation", err)
         for command in ("cat <<E'OF'\ngit tag v6\nEOF", "cat <<E:OF\ngit tag v6\nE:OF", "echo \\`git tag v6\\`"):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+        for command in ("cat <<E\n" * 20_000 + "git tag v7", '"$(' + "cat <<E\n" * 20_000 + 'git tag v7)"', "".join(f"cat <<E{n}\n" for n in range(15_000)) + "git tag v7"):
+            started = time.monotonic()
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command[:20])
+            self.assertLess(time.monotonic() - started, 5, command[:20])
 
     def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
         self.configure(gatedCommands=["^git tag ", "^git push .*--force"])

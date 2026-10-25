@@ -15,7 +15,7 @@ import os
 import re
 import sys
 
-from _common import SHELLS, block, git_options, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
+from _common import SHELLS, WORD_START, block, git_options, heredoc_at, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, skip_heredoc_bodies, tool_input
 
 MARKER_RELPATH = ".claude/.release-authorized"
 
@@ -168,7 +168,10 @@ def simple_commands(command: str) -> list:
 def substitutions(command: str, quotes: bool = True) -> list:
     """The command inside each `$(...)` and backtick span the shell runs in `command`: outside quotes or inside double quotes, never inside single quotes or after a backslash.
 
-    With `quotes` false, as in a heredoc body, quote characters are literal.
+    With `quotes` false, as in a heredoc body, quote characters are literal. A
+    backtick span ends at the first backtick not escaped, and its inner text is
+    read with `\\``, `\\$` and `\\\\` unescaped, as bash does, so a nested
+    backtick span is found when that text is read.
     """
     found = []
     quote = ""
@@ -195,9 +198,11 @@ def substitutions(command: str, quotes: bool = True) -> list:
             found.append(command[index + 2 : end])
             index = end
         elif char == "`":
-            end = command.find("`", index + 1)
-            end = len(command) if end == -1 else end
-            found.append(command[index + 1 : end])
+            end = index + 1
+            while end < len(command) and command[end] != "`":
+                end += 2 if command[end] == "\\" else 1
+            end = min(end, len(command))
+            found.append(re.sub(r"\\([\\`$])", r"\1", command[index + 1 : end]))
             index = end
         index += 1
     return found
@@ -206,11 +211,12 @@ def substitutions(command: str, quotes: bool = True) -> list:
 def closing_paren(command: str, start: int) -> int:
     """The index of the `)` that closes the `(` at `start`, or the end of `command`.
 
-    Parentheses in quoted text or after a backslash do not count, nor does the
-    `)` that ends a `case` pattern.
+    Parentheses in quoted text, after a backslash, in a `#` comment or in a
+    heredoc body do not count, nor does the `)` that ends a `case` pattern.
     """
     depth = 0
     cases = []
+    pending = []
     quote = ""
     index = start
     while index < len(command):
@@ -223,6 +229,18 @@ def closing_paren(command: str, start: int) -> int:
                 quote = ""
         elif char in "'\"":
             quote = char
+        elif char == "#" and index > start and command[index - 1] in WORD_START:
+            end = command.find("\n", index)
+            index = len(command) if end == -1 else end
+            continue
+        elif char == "\n" and pending:
+            index = skip_heredoc_bodies(command, index + 1, pending)
+            pending = []
+            continue
+        elif char == "<" and (heredoc := heredoc_at(command, index)):
+            pending.append(heredoc[1:])
+            index = heredoc[0]
+            continue
         elif keyword_at(command, index, "case"):
             cases.append(depth)
         elif keyword_at(command, index, "esac") and cases:

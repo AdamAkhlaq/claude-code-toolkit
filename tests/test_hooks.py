@@ -217,6 +217,37 @@ class DeployGateTests(HookCase):
         for command in ("cat <<'EOF'\n$(git tag v1)\nEOF", 'cat <<"EOF"\n`git tag v1`\nEOF', "cat <<EOF\ngit tag v1\nEOF"):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
 
+    def test_the_reader_ends_quotes_heredocs_and_substitutions_where_bash_does(self):
+        self.configure(gatedCommands=["^git tag "])
+        for command in (
+            "echo $'a\\'b'; git tag v1; echo 'c'",
+            "echo $'\\''; git tag v1; echo \"'\"",
+            "echo \"a\\\"b\" $'c\\'d'; git tag v1; echo \"'\"",
+            "x=$'\\'' git tag v1; echo \"'\"",
+            "cat <<E'OF'\nEOF\ngit tag v2\nE",
+            'cat <<"E"OF\nEOF\ngit tag v2\nE',
+            "cat <<E\\OF\nEOF\ngit tag v2\nE",
+            "cat <<-E'OF'\n\tEOF\ngit tag v2\nE",
+            "cat <<E:OF\nE:OF\ngit tag v3\nE",
+            "cat <<E+OF\nE+OF\ngit tag v3\nE",
+            "cat <<E$OF\nE$OF\ngit tag v3\nE",
+            "echo `echo \\`git tag v4\\``",
+            'echo "`echo \\`git tag v4\\``"',
+            "echo `echo \\`echo \\\\\\`git tag v4\\\\\\`\\``",
+            'x="$( : # )\ngit tag v5\n)"',
+            "x=\"$(cat <<'E'\n)\nE\ngit tag v5\n)\"",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err)
+        for command in ("cat <<E'OF'\ngit tag v6\nEOF", "cat <<E:OF\ngit tag v6\nE:OF", "echo \\`git tag v6\\`"):
+            self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+        for command in ("cat <<E\n" * 20_000 + "git tag v7", '"$(' + "cat <<E\n" * 20_000 + 'git tag v7)"', "".join(f"cat <<E{n}\n" for n in range(15_000)) + "git tag v7"):
+            started = time.monotonic()
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command[:20])
+            self.assertLess(time.monotonic() - started, 5, command[:20])
+
     def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
         self.configure(gatedCommands=["^git tag ", "^git push .*--force"])
         refs = " ".join(f"r{n}" for n in range(70))
@@ -519,6 +550,10 @@ class RedGuardTests(HookCase):
             f'git -C "{self.root}" commit -m x',
             'bash -c "git add -A && git commit -m x"',
             "eval 'git commit -m x'",
+            "echo $'a\\'b'; git commit -am x; echo 'c'",
+            "x=$'\\'' git commit -am x; echo \"'\"",
+            "cat <<E'OF'\nEOF\ngit commit -am x\nE",
+            "cat <<E:OF\nE:OF\ngit commit -am x\nE",
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)

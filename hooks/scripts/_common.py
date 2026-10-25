@@ -5,7 +5,9 @@ Every hook follows the same contract: read the tool event from stdin, load
 config is absent. A hook only ever acts on a project that opted in.
 """
 
+import bisect
 import fnmatch
+import functools
 import json
 import os
 import re
@@ -165,14 +167,52 @@ def shell_tokens(command: str) -> list:
 
 
 QUOTED = r"'[^']*'|\"(?:\\.|[^\"\\])*\""
-FALLBACK_TOKEN = re.compile(rf"[();<>|&`\n]+|(?:{QUOTED}|[^\s();<>|&`'\"])+|['\"]")
+FALLBACK_TOKEN = re.compile(rf"[();<>|&`\n]+|(?:{QUOTED}|\\.|[^\s();<>|&`'\"\\])+|['\"\\]")
 
 
 def unquote(token: str) -> str:
-    return re.sub(QUOTED, lambda match: match.group(0)[1:-1], token)
+    return re.sub(rf"{QUOTED}|\\.", lambda match: match.group(0)[1:] if match.group(0)[0] == "\\" else match.group(0)[1:-1], token)
 
 
-HEREDOC = re.compile(r"<<(-?)[ \t]*(\\?)(['\"]?)([\w.-]+)\3")
+def heredoc_at(command: str, index: int):
+    """The heredoc whose `<<` is at `index`, as (end of its delimiter, strip_tabs, delimiter, expands), or None.
+
+    The delimiter is the whole word after `<<`, up to whitespace or an
+    operator, with its quotes removed, and the body expands only when no quote
+    or backslash appears anywhere in it, as in bash: `<<E'OF'` ends at a line
+    `EOF` and is literal, `<<E:OF` ends at a line `E:OF`.
+    """
+    if not command.startswith("<<", index) or command.startswith("<<<", index):
+        return None
+    position = index + 2
+    strip_tabs = command.startswith("-", position)
+    position += strip_tabs
+    while command[position : position + 1] in (" ", "\t"):
+        position += 1
+    parts = []
+    quoted = False
+    while position < len(command) and command[position] not in " \t\n;&|()<>":
+        char = command[position]
+        if char == "\\":
+            quoted = True
+            parts.append(command[position + 1 : position + 2])
+            position += 2
+        elif char in "'\"":
+            quoted = True
+            end = position + 1
+            while end < len(command) and command[end] != char:
+                end += 2 if char == '"' and command[end] == "\\" else 1
+            if end >= len(command):
+                return None
+            span = command[position + 1 : end]
+            parts.append(re.sub(r'\\([\\"$`])', r"\1", span) if char == '"' else span)
+            position = end + 1
+        else:
+            parts.append(char)
+            position += 1
+    if not parts:
+        return None
+    return position, strip_tabs, "".join(parts), not quoted
 
 
 def shell_source(command: str, bodies=None) -> str:
@@ -198,6 +238,10 @@ def shell_source(command: str, bodies=None) -> str:
         char = command[index]
         starts_word = at_word_start
         at_word_start = False
+        if char == "\\" and quote == "$'":
+            kept.append("'\\''" if command[index + 1 : index + 2] == "'" else command[index : index + 2])
+            index += 2
+            continue
         if char == "\\" and quote != "'":
             if command[index + 1 : index + 2] != "\n":
                 kept.append(command[index : index + 2])
@@ -208,7 +252,7 @@ def shell_source(command: str, bodies=None) -> str:
                 quote = ""
         elif command.startswith("$'", index):
             quote = "$'"
-            kept.append(quote)
+            kept.append("'")
             index += 2
             continue
         elif char in "'\"":
@@ -249,10 +293,11 @@ def shell_source(command: str, bodies=None) -> str:
             kept.append("<<<")
             index += 3
             continue
-        elif char == "<" and not arithmetic and not brackets and (match := HEREDOC.match(command, index)):
-            pending.append((match.group(1) == "-", match.group(4), not (match.group(2) or match.group(3))))
-            kept.append(match.group(0))
-            index = match.end()
+        elif char == "<" and not arithmetic and not brackets and (heredoc := heredoc_at(command, index)):
+            end, strip_tabs, delimiter, expands = heredoc
+            pending.append((strip_tabs, delimiter, expands))
+            kept.append(command[index:end])
+            index = end
             continue
         kept.append(char)
         at_word_start = not quote and char in WORD_START
@@ -267,20 +312,33 @@ def skip_heredoc_bodies(command: str, index: int, pending: list, bodies=None) ->
     body of each heredoc that expands is appended to `bodies` when it is a list.
     """
     for strip_tabs, delimiter, expands in pending:
-        position = index
-        while position < len(command):
-            end = command.find("\n", position)
-            end = len(command) if end == -1 else end
-            line = command[position:end]
-            if (line.lstrip("\t") if strip_tabs else line) == delimiter:
-                if expands and bodies is not None:
-                    bodies.append(command[index:position])
-                index = min(end + 1, len(command))
-                break
-            position = end + 1
-        else:
+        starts = line_starts(command)[1 if strip_tabs else 0].get(delimiter, [])
+        found = bisect.bisect_left(starts, index)
+        if found == len(starts):
             return index
+        position = starts[found]
+        if expands and bodies is not None:
+            bodies.append(command[index:position])
+        end = command.find("\n", position)
+        index = len(command) if end == -1 else end + 1
     return index
+
+
+@functools.lru_cache(maxsize=8)
+def line_starts(command: str) -> tuple:
+    """Where each line of `command` starts, by its text, and by its text with leading tabs stripped.
+
+    Built once per command, so finding a heredoc's closing line costs a lookup
+    rather than a scan to the end of the call for every heredoc that never closes.
+    """
+    plain = {}
+    stripped = {}
+    position = 0
+    for line in command.split("\n"):
+        plain.setdefault(line, []).append(position)
+        stripped.setdefault(line.lstrip("\t"), []).append(position)
+        position += len(line) + 1
+    return plain, stripped
 
 
 def is_operator(token: str) -> bool:

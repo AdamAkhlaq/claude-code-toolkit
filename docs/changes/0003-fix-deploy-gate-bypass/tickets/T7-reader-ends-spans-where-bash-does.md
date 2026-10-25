@@ -10,7 +10,7 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_reader_ends_quotes_heredocs_and_substitutions_where_bash_does: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `echo $''a\''b''; git tag v1; echo ''c''`, on `cat <<E''OF''`, `EOF`, `git tag v2` and `E` on four lines, on `cat <<E:OF`, `E:OF`, `git tag v3` and `E` on four lines, on ``echo `echo \`git tag v4\`` ``, and on `x="$( : # )`, `git tag v5` and `)"` on three lines, and exits 0 silently on `cat <<E''OF''`, `git tag v6` and `EOF` on three lines; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py blocks with the feedback output on `echo $''a\''b''; git commit -am x; echo ''c''` and on `cat <<E''OF''`, `EOF`, `git commit -am x` and `E` on four lines'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T7
 ---
@@ -77,3 +77,16 @@ Live check, 2026-10-25: a headless `claude --plugin-dir <this checkout> -p --per
 | `x="$( : # )`, `git tag v4`, `)"` on three lines      | blocked, same message                                                                                      |
 
 `git for-each-ref refs/tags` in the repo afterwards listed nothing.
+
+### Verifier 2026-10-25 17:36
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. Both tests drive `deploy_gate.py` and `red_guard.py` as subprocesses. Added on this branch (08f06aa, 21446fb) before the fix (d99a73e). Every one of the 16 blocking `deploy-gate` cases and the 4 new `red-guard` cases exits 0 against the hooks from `change/0003-fix-deploy-gate-bypass`, and the silent `<<E'OF'` and `<<E:OF` cases exit 2 there; all 23 match at HEAD. In `/bin/bash` with a stub `git` that writes to stderr, the `$'a\'b'`, `<<E'OF'`, `<<E:OF`, `<<E$OF`, nested backtick and `# )` cases run the tag, and the `<<E'OF'` body and the escaped top-level backticks do not.
+3. proving test run: 0, `Ran 2 tests in 2.110s OK` (`python3 -m unittest -v tests.test_hooks.DeployGateTests.test_the_reader_ends_quotes_heredocs_and_substitutions_where_bash_does tests.test_hooks.RedGuardTests.test_reworded_commits_are_recognised`)
+4. feedback command: 0, `Ran 79 tests in 10.983s OK` (`python3 -m unittest discover -s tests`)
+5. acceptance: 3 of 3 checked. The proving test passes (check 3). Every other test passes (check 4) and no existing test line was changed (check 7). The `[Unreleased]` `deploy-gate` entry in `CHANGELOG.md` names `$'a\'b'`, the whole-word heredoc delimiter (`<<E'OF'`, `<<E:OF`), the backtick span ending at the first unescaped backtick with nested spans read, and a `)` in a `#` comment inside `$(...)`.
+6. scope: ok. Changed: `CHANGELOG.md`, `hooks/scripts/_common.py`, `hooks/scripts/deploy_gate.py`, `tests/test_hooks.py` and the ticket file.
+7. tests intact: ok. The diff under `tests/` has no removed lines and adds no skip or expected-failure markers.

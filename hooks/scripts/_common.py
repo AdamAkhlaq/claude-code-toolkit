@@ -149,12 +149,13 @@ def shell_tokens(command: str) -> list:
 
     A newline outside quotes separates commands as `;` does, so it is kept as
     an operator. Comments, heredoc bodies and backslash-newlines are dropped
-    first, by `shell_source`. shlex joins adjacent operators into one token,
+    first, by `shell_source`, and braces are expanded, by `expand_braces`.
+    shlex joins adjacent operators into one token,
     `;>` or `&&>`, so each run is split back into the operators it holds. A
     command shlex cannot read, such as `$'it\\'s'`, is split at operators and
     whitespace outside quotes instead, each quoted span kept whole.
     """
-    script = shell_source(command)
+    script = expand_braces(shell_source(command))
     lexer = shlex.shlex(script, posix=True, punctuation_chars=OPERATOR_CHARS)
     lexer.whitespace_split = True
     lexer.whitespace = " \t\r"
@@ -172,6 +173,198 @@ FALLBACK_TOKEN = re.compile(rf"[();<>|&`\n]+|(?:{QUOTED}|\\.|[^\s();<>|&`'\"\\])
 
 def unquote(token: str) -> str:
     return re.sub(rf"{QUOTED}|\\.", lambda match: match.group(0)[1:] if match.group(0)[0] == "\\" else match.group(0)[1:-1], token)
+
+
+ANSI_C = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
+ANSI_C_NUMBER = re.compile(r"\\(?:([0-7]{1,3})|x([0-9A-Fa-f]{1,2})|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})|c(.))", re.S)
+
+
+def ansi_c_escape(command: str, index: int) -> tuple:
+    """The text the backslash escape at `index` inside `$'...'` stands for, as bash decodes it, and how many characters it takes: `\\x67` is `g`, `\\147` is `g`."""
+    letter = command[index + 1 : index + 2]
+    if letter in ANSI_C:
+        return ANSI_C[letter], 2
+    match = ANSI_C_NUMBER.match(command, index)
+    if not match:
+        return command[index : index + 2], 2
+    octal, byte, short, long, control = match.groups()
+    if control is not None:
+        return chr(ord(control) & 0x1F), match.end() - index
+    code = int(octal, 8) & 0xFF if octal else int(byte or short or long, 16)
+    return (chr(code) if code <= 0x10FFFF else match.group(0)), match.end() - index
+
+
+def ansi_c_close(command: str, index: int) -> int:
+    """The index of the `'` that closes the `$'...'` span holding `index`, where bash stops reading the word's text after a NUL."""
+    while index < len(command) and command[index] != "'":
+        index += 2 if command[index] == "\\" else 1
+    return index
+
+
+BRACES = 10_000
+BRACE_CHARACTERS = 1_000_000
+
+
+class Unreadable(Exception):
+    """A call the reader will not finish, such as one whose braces expand past BRACES words: a hook blocks it rather than half reading it."""
+
+
+def expand_braces(script: str) -> str:
+    """`script` with each unquoted brace expression expanded as bash expands it before running a command: `{git,tag} v1` reads `git tag v1` and `app.py{,.bak}` reads `app.py app.py.bak`.
+
+    A quoted or escaped brace, `${...}`, and a brace holding no top-level comma
+    and no `..` sequence stay as they are, as in `{ echo; }` or `find -exec
+    {} ;`. Expansion multiplies across a word, so past BRACES words or
+    BRACE_CHARACTERS characters in all the call is Unreadable.
+    """
+    if "{" not in script:
+        return script
+    budget = [BRACES, BRACE_CHARACTERS]
+    kept = []
+    word = []
+    quote = ""
+    braces = 0
+    index = 0
+    while index < len(script):
+        char = script[index]
+        if char == "\\" and quote != "'":
+            word.append(script[index : index + 2])
+            index += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif script.startswith("${", index):
+            braces += 1
+            word.append("${")
+            index += 2
+            continue
+        elif braces and char == "}":
+            braces -= 1
+        elif not braces and char in WORD_START:
+            kept.extend(expand_word("".join(word), budget))
+            kept.append(char)
+            word = []
+            index += 1
+            continue
+        word.append(char)
+        index += 1
+    kept.extend(expand_word("".join(word), budget))
+    return "".join(kept)
+
+
+def expand_word(word: str, budget: list) -> list:
+    """`word` with its brace expressions expanded, as text joined by spaces, each result keeping its quotes."""
+    if "{" not in word:
+        return [word]
+    marks = unquoted_positions(word)
+    pairs = {}
+    stack = []
+    for mark in marks:
+        char = word[mark]
+        if char == "{":
+            stack.append((mark, []))
+        elif char == "," and stack:
+            stack[-1][1].append(mark)
+        elif char == "}" and stack:
+            open_, commas = stack.pop()
+            pairs[open_] = (mark, commas)
+    words = expand_range(word, marks, pairs, 0, len(word), budget)
+    return [" ".join(part for part in words if part)]
+
+
+def expand_range(word: str, marks: list, pairs: dict, low: int, high: int, budget: list) -> list:
+    """The words `word[low:high]` expands to.
+
+    Each `{` is paired with its `}` once, by `expand_word`, so a word is read in
+    one pass however its braces nest. A brace that is neither a list nor a
+    sequence stays literal and the braces inside it are still expanded, as bash
+    does: `{a{b,c}}` reads `{ab} {ac}`.
+    """
+    segments = []
+    literal = low
+    position = bisect.bisect_left(marks, low)
+    while position < len(marks) and marks[position] < high:
+        open_ = marks[position]
+        close, commas = pairs.get(open_, (high, None))
+        options = None
+        if close < high and commas:
+            spend_braces(budget, 1, 0)
+            bounds = [open_, *commas, close]
+            options = [option for start, end in zip(bounds, bounds[1:]) for option in expand_range(word, marks, pairs, start + 1, end, budget)]
+        elif close < high and close - open_ <= 64:
+            options = sequence(word[open_ + 1 : close], budget)
+        if options is None:
+            position += 1
+            continue
+        segments += [[word[literal:open_]], options]
+        literal = close + 1
+        position = bisect.bisect_right(marks, close)
+    segments.append([word[literal:high]])
+    count = 1
+    for options in segments:
+        count *= len(options)
+    spend_braces(budget, count, sum(sum(map(len, options)) * (count // len(options)) for options in segments))
+    words = [""]
+    for options in segments:
+        words = [done + option for done in words for option in options]
+    return words
+
+
+def unquoted_positions(word: str) -> list:
+    """The index of each character of `word` outside quotes, escapes and `${...}`."""
+    marks = []
+    quote = ""
+    braces = 0
+    index = 0
+    while index < len(word):
+        char = word[index]
+        if char == "\\" and quote != "'":
+            index += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif word.startswith("${", index):
+            braces += 1
+            index += 2
+            continue
+        elif braces:
+            braces -= char == "}"
+        else:
+            marks.append(index)
+        index += 1
+    return marks
+
+
+SEQUENCE = re.compile(r"(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?|([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?\d+))?")
+
+
+def sequence(body: str, budget: list):
+    """The words of a `{x..y}` or `{x..y..step}` sequence of integers or single letters, or None when `body` is not one."""
+    match = SEQUENCE.fullmatch(body)
+    if not match:
+        return None
+    first, last, step, first_letter, last_letter, letter_step = match.groups()
+    start, end = (int(first), int(last)) if first is not None else (ord(first_letter), ord(last_letter))
+    step = abs(int(step or letter_step or 1)) or 1
+    spend_braces(budget, abs(end - start) // step + 1, 0)
+    values = range(start, end + 1, step) if start <= end else range(start, end - 1, -step)
+    if first is None:
+        return [chr(value) for value in values]
+    width = max(len(first), len(last)) if any(re.match(r"-?0\d", number) for number in (first, last)) else 0
+    return [f"{value:0{width}d}" for value in values]
+
+
+def spend_braces(budget: list, words: int, characters: int) -> None:
+    budget[0] -= words
+    budget[1] -= characters
+    if budget[0] < 0 or budget[1] < 0:
+        raise Unreadable
 
 
 def heredoc_at(command: str, index: int):
@@ -239,8 +432,12 @@ def shell_source(command: str, bodies=None) -> str:
         starts_word = at_word_start
         at_word_start = False
         if char == "\\" and quote == "$'":
-            kept.append("'\\''" if command[index + 1 : index + 2] == "'" else command[index : index + 2])
-            index += 2
+            text, length = ansi_c_escape(command, index)
+            if "\0" in text:
+                index = ansi_c_close(command, index)
+                continue
+            kept.append(text.replace("'", "'\\''"))
+            index += length
             continue
         if char == "\\" and quote != "'":
             if command[index + 1 : index + 2] != "\n":

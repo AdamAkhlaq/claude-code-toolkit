@@ -15,7 +15,7 @@ import os
 import re
 import sys
 
-from _common import SHELLS, WORD_START, block, git_options, heredoc_at, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, skip_heredoc_bodies, tool_input
+from _common import BRACES, SHELLS, WORD_START, Unreadable, block, git_options, heredoc_at, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, skip_heredoc_bodies, tool_input
 
 MARKER_RELPATH = ".claude/.release-authorized"
 
@@ -29,10 +29,6 @@ def authorised(root) -> bool:
 BUDGET = 100_000
 # shlex builds a word one character at a time, so reading a word costs the square of its length: 300,000 characters is read in under a second.
 CHARACTERS = 300_000
-
-
-class Unreadable(Exception):
-    """The call holds more words or characters than the gate reads: it is blocked rather than half read."""
 
 
 def readings(command: str, budget=None, seen=None) -> list:
@@ -278,7 +274,7 @@ def main() -> int:
         if authorised(root):
             return 0
         return block(
-            f"Blocked: this Bash call is too long to read for gated commands (over {BUDGET} words or {CHARACTERS} characters, or nested too deep), "
+            f"Blocked: this Bash call is too long to read for gated commands (over {BUDGET} words or {CHARACTERS} characters, braces that expand past {BRACES} words, or nested too deep), "
             "so deploy-gate cannot tell whether it runs one. Split it into shorter calls."
         )
     except Exception as exc:

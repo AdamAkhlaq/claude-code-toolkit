@@ -138,10 +138,16 @@ def main() -> int:
     try:
         event = read_event()
         command = tool_input(event).get("command") or ""
-        if not is_git_commit(command):
-            return 0
     except Exception:
         return 0
+    try:
+        if not is_git_commit(command):
+            return 0
+    except Exception as exc:
+        config = load_config(project_dir())
+        if not (config and config.get("feedbackCommand")):
+            return 0
+        return block(f"Commit stopped: red-guard could not read this Bash call ({type(exc).__name__}), so it cannot tell whether it commits. Split or rephrase it.")
     try:
         return guard(event, command)
     except Exception as exc:

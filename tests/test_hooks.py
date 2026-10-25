@@ -253,7 +253,21 @@ class DeployGateTests(HookCase):
         code, out, err = run_hook("deploy_gate.py", bash_event("x " * 99_000 + "&& git status"), self.root)
         self.assertEqual((code, out, err), (0, "", ""))
         self.assertLess(time.monotonic() - started, 5)
-        config = json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        for command in (
+            "SHELL=/bin/bash eval 'git tag v1'",
+            'PAGER=/bin/sh eval "git tag v1"',
+            "SHELL=/bin/bash command eval 'git tag v1'",
+            "X=/bin/sh ionice -c 2 bash -c 'git tag v1'",
+            "X=/bin/eval Y=\"'\" eval 'git tag v1'",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+        for command in ("sh " * 20_000 + "-c 'git tag v1'", "x" * 999_000 + " && git tag v1", "'" + "x " * 450_000):
+            started = time.monotonic()
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command[:20])
+            self.assertLess(time.monotonic() - started, 5, command[:20])
+        config =json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
         entries = [hook for group in config["hooks"]["PreToolUse"] for hook in group["hooks"] if "deploy_gate.py" in hook["command"]]
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0].get("onFailure"), "block")

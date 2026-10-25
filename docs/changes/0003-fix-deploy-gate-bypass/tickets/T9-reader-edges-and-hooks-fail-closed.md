@@ -43,3 +43,46 @@ Seam: the hook scripts as subprocesses. Write the proving test first and commit 
 - `CHANGELOG.md`'s `[Unreleased]` entries say that `secret-guard` and `ticket-sync` block a commit they cannot read.
 
 ## Evidence
+
+### Evidence 2026-10-25 22:10
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+...................................................................................
+----------------------------------------------------------------------
+Ran 83 tests in 13.958s
+
+OK
+```
+
+Per `CLAUDE.md`, each form's family was checked first in `/bin/bash` 3.2 and `/bin/zsh` with a stub `git` printing to stderr, and every member that got past a hook went into the proving test, committed failing before the code changed (ac21c50). The check changed two of the ticket's instructions:
+
+- bash and zsh read `$$'` differently: bash takes `$$` as the PID and a plain quote after it, zsh a `$'...'` quote. Following bash alone, as the ticket said, would have let `echo $$'\'' ; git tag v1` through in zsh, which runs it, and it was blocked before. The same split holds for heredoc delimiters: bash ends `<<$"EOF"` at a line `EOF` and zsh at `$EOF`, and `<<$$'EOF'` at `$$EOF` and `$EOF`. The maintainer decided at this ticket that the hooks fail closed exactly where the two shells disagree, and `proves` was amended in the test commit to say so.
+- Both shells do expand a letter range whose ends differ in case: `{W..a}` gives `W`, `X`, `Y`, `Z`, then `[`, a backslash, `]`, `^`, `_`, a backtick, and `a`. What kept `{W..a..5}` literal was the step, which bash 3.2 never takes and zsh takes only on numbers. Not expanding mixed case would itself miss a word the shells build, so instead every character a range produces that is not a letter or digit is escaped.
+
+Family members added to the test beyond the ticket's cases: `$'a\c'`, `$'\c\\'` and `$'\c\''` (both shells pair every backslash when they look for the closing quote, so `$'\c\\'` closes at its last quote too), `{Z..a}` with either kind of quote after it, `{a..W}` and `{A..z..1}`, `<<-$'EOF'`, `<<E$'OF'` and `<<$'E\x4fF'` (both shells decode the span), and an unquoted heredoc body holding `$'$(git tag v4)'`, `` $'x' `git tag v4` `` or `$$'$(git tag v4)'`. That last group was the `$'` branch in `deploy_gate.substitutions`, which read a quote in a heredoc body, where quotes are literal; with every real `$'...'` already decoded by `shell_source`, the branch is gone, and `deploy_gate.py` was added to `files`. Blocked as read differently: `$$'\'`, `$$$$'\'`, `a$$'\'`, `x=$$'\'`, `$$'\''`, `<<$"EOF"` both ways round, and `<<$$'EOF'`.
+
+The fix, in `_common`:
+
+- `shell_source` finds a `$'...'` span's closing quote first, pairing each backslash with the character after it as both shells do, and only then decodes the text between (`ansi_c_text`), so no escape can take the closing quote. A run of `$` before a quote is read whole (`dollar_run`): an odd run ends in a `$'...'` span; after an even run the quote is plain in bash, and where a backslash comes before its close, so that zsh would end it elsewhere, the call raises `ShellsDiffer`, a kind of `Unreadable`.
+- `heredoc_at` decodes a `$'...'` span in a delimiter and raises `ShellsDiffer` for `$"` or a run of `$` before a quote. `shell_source` writes a quoted delimiter back as one plain single-quoted word, so the readers after it never meet the `$'` again.
+- `sequence` escapes each character it produces that is not a letter or digit.
+- `secret-guard` and `ticket-sync` catch a reader error around `is_git_commit` and block, naming the hook, with the reason when the shells differ; `ticket-sync` stays silent when no change is in progress, and both stay silent without `toolkit.json` (cases added to `NoConfigTests`). `red-guard`'s message now starts "Blocked: red-guard could not read this Bash call". `deploy-gate` says "bash and zsh read ... differently" for `ShellsDiffer` and keeps its too-long message for the rest.
+
+Boundaries of the new code, probed the same way, all blocked or silent as bash and zsh run them: `"$$'"`, `${#}$'\''`, `$((1))$'\x41\''`, `$$${x}`, an unclosed `$'` over three lines, `$'\0'`, `$'a\0b\'c'`, `<<$'E'\''F'`, `<<$'EOF'x`, `<<x$'E\'F'`, `<<$'E OF'`, an unclosed `<<$'EOF`, a `$(...)` after a decoded or quoted delimiter on the same line, `{Z..a}{a..c}`, `{1..-1}`, a quoted `"{Z..a}"`, `$'\x27'`, `$'\047'` and `$$$'\x27'`. The forms from T7, T8 and the fourth review that still get past are the nested-quote family, which is T10, and commits inside a substitution that `red-guard` does not read, recorded in `docs/backlog.md`.
+
+Timing through `deploy-gate`, all under 1.1 s: 290,000 `$` with no quote after them (an early draft rescanned the run from every `$`, which is quadratic, so a run is now taken once), the same before a quote, the same as a heredoc delimiter, 70,000 `$'a'`, 55,000 `$$'a'` and 900 `{Z..a}'x'`. `claude plugin validate .` passes with the same warnings as before this branch.
+
+Live check, 2026-10-25: a headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` session in a throwaway repo with `"gatedCommands": ["^git tag "]`, an AWS key staged, no `RELEASE_AUTHORIZED` and no marker, one Bash call per command.
+
+| Command                                   | Result                                                                                            |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `echo $'\c'; git tag v1; echo 'x'`        | blocked: "Blocked: 'echo $'\c'; git tag v1; echo 'x'' matches gated command pattern '^git tag '"  |
+| `echo {W..a..5}'x'; git tag v2; echo 'y'` | blocked: "Blocked: 'echo {W..a..5}'x'; git tag v2; echo 'y'' matches gated command pattern '^git" |
+| `echo $$'\'' ; git tag v3`                | blocked: "Blocked: bash and zsh read $$'\' differently: bash as a plain quote after $$, zsh as a" |
+| `git commit -m x; echo ` and 14 `{a,b}`   | blocked by `deploy-gate` as too long to read                                                      |
+| `mkdir -p src/{a,b} && ls src`            | ran, printed `a` and `b`                                                                          |
+
+The same commit in a second repo whose `toolkit.json` has no `gatedCommands` was blocked by `secret-guard`: "Blocked: secret-guard could not read this Bash call (Unreadable), so it cannot tell whether it commits a secret. Split or rephrase it." `git for-each-ref refs/tags` listed nothing in the first repo, and neither log held more than its first commit.

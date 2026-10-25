@@ -16,6 +16,7 @@ from _common import (
     is_git_commit,
     load_config,
     project_dir,
+    read_error,
     read_event,
     tool_input,
 )
@@ -69,8 +70,11 @@ def main() -> int:
     if config is None:
         return 0
     command = tool_input(read_event()).get("command") or ""
-    if not is_git_commit(command):
-        return 0
+    try:
+        if not is_git_commit(command):
+            return 0
+    except Exception as exc:
+        return block(f"Blocked: secret-guard could not read this Bash call ({read_error(exc)}), so it cannot tell whether it commits a secret. Split or rephrase it.")
     allowlist = config.get("secretAllowlist") or []
     hits = []
     for path, line_no, text in added_lines(root, commits_all_tracked(command)):

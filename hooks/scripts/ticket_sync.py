@@ -9,7 +9,7 @@ import re
 import sys
 from pathlib import Path
 
-from _common import ask, commits_all_tracked, git, is_git_commit, load_config, project_dir, read_event, tool_input
+from _common import ask, block, commits_all_tracked, git, is_git_commit, load_config, project_dir, read_error, read_event, tool_input
 
 CHANGES_RELPATH = "docs/changes"
 STATUS_LINE = re.compile(r"^status:\s*['\"]?([A-Za-z-]+)", re.MULTILINE)
@@ -46,7 +46,13 @@ def main() -> int:
     if config is None:
         return 0
     command = tool_input(read_event()).get("command") or ""
-    if not is_git_commit(command):
+    try:
+        commits = is_git_commit(command)
+    except Exception as exc:
+        if not in_progress_changes(root):
+            return 0
+        return block(f"Blocked: ticket-sync could not read this Bash call ({read_error(exc)}), so it cannot tell whether it commits without the ticket. Split or rephrase it.")
+    if not commits:
         return 0
     active = in_progress_changes(root)
     if not active:

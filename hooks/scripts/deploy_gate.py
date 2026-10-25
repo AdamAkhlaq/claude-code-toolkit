@@ -6,7 +6,7 @@ authorised a release, either by exporting RELEASE_AUTHORIZED or by creating
 command and against each simple command in it, anchored at every word that
 could name a program, so `^git tag ` also catches `cd . && git tag v1` and
 `sudo git tag v1`. A call too long or too deeply nested to read is blocked
-rather than half read.
+rather than half read, as is one bash and zsh read differently.
 A script fed to an interpreter, such as `echo 'git tag v1' | bash`, is not
 read, nor is a word built from a variable, such as `git $t v1`.
 """
@@ -15,7 +15,7 @@ import os
 import re
 import sys
 
-from _common import BRACES, SHELLS, WORD_START, Unreadable, block, git_options, heredoc_at, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, skip_heredoc_bodies, tool_input
+from _common import BRACES, SHELLS, WORD_START, ShellsDiffer, Unreadable, block, git_options, heredoc_at, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, skip_heredoc_bodies, tool_input
 
 MARKER_RELPATH = ".claude/.release-authorized"
 
@@ -179,12 +179,9 @@ def substitutions(command: str, quotes: bool = True) -> list:
             continue
         if not quotes and char in "'\"":
             pass
-        elif quote in ("'", "$'"):
+        elif quote == "'":
             if char == "'":
                 quote = ""
-        elif command.startswith("$'", index) and not quote:
-            quote = "$'"
-            index += 1
         elif char == "'" and not quote:
             quote = "'"
         elif char == '"':
@@ -270,6 +267,10 @@ def main() -> int:
         return 0
     try:
         lines = readings(command)
+    except ShellsDiffer as exc:
+        if authorised(root):
+            return 0
+        return block(f"Blocked: {exc}, so deploy-gate cannot tell whether this Bash call runs a gated command. Rephrase it so both shells read it alike.")
     except (Unreadable, RecursionError):
         if authorised(root):
             return 0

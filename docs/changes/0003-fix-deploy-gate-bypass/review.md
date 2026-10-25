@@ -125,7 +125,7 @@ Three passes from `REVIEW.md` over the delta `a90e0c2...cd72334`, which holds T4
 
 Taken by Adam Akhlaq on 2026-10-25 at the review gate:
 
-- The four reader bugs (`$'...'` in the fallback, heredoc delimiters, escaped backticks, a `)` in a comment) and the ANSI-C and brace forms become ticket T7 in this change, worked test-first with a `RedGuardTests` case for each form `red-guard` shares. The reader decodes `$'...'` and expands an unquoted `{a,b}`, so a program word is read as bash sees it. 0.5.1 waits for T7.
+- The four reader bugs (`$'...'` in the fallback, heredoc delimiters, escaped backticks, a `)` in a comment) and the ANSI-C and brace forms become tickets in this change, worked test-first with a `RedGuardTests` case for each form `red-guard` shares. The reader decodes `$'...'` and expands an unquoted `{a,b}`, so a program word is read as bash sees it. At the tickets gate the work was cut as T7 (the four reader bugs) and T8 (`$'...'`, braces, and `red-guard` blocking a commit it cannot read). 0.5.1 waits for T8.
 - Parameter expansion is a stated limit, beside the interpreter case: a variable's value is runtime state the call does not hold, and a hard guarantee stays a permissions deny rule.
 - The Decision of 2026-10-24 that `eval` is re-read in linear time is amended: every `eval` and shell word is read, under the call's budget, and a chain past it is blocked as too long to read. Reading only the first was itself a bypass (`SHELL=/bin/bash eval '...'`), and the budget keeps the gate from failing open.
 

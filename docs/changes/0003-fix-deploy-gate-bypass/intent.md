@@ -51,3 +51,7 @@ The review of T1 found the fix opened new bypasses and left rewordings the outco
 ## Amendment 2026-10-24: three more tickets
 
 The second review, of `a90e0c2`, found eight more ways past the gate, so T4 (the shell reader splits words where bash does), T5 (a substitution the shell runs is read whole, in a heredoc too) and T6 (the gate never fails open on a long or nested call) were appended: six tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.
+
+## Amendment 2026-10-25: two more tickets
+
+The third review, of `cd72334`, found five more ways past the gate, so T7 (the shell reader ends quotes, heredocs and substitutions where bash does) and T8 (a word is read as bash expands it, from ANSI-C quotes and braces, and `red-guard` blocks a commit it cannot read) were appended: eight tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.

@@ -5,6 +5,7 @@ blocked_by: [T8]
 files:
   [
     hooks/scripts/_common.py,
+    hooks/scripts/deploy_gate.py,
     hooks/scripts/red_guard.py,
     hooks/scripts/secret_guard.py,
     hooks/scripts/ticket_sync.py,
@@ -12,7 +13,7 @@ files:
     README.md,
     CHANGELOG.md,
   ]
-proves: 'in tests/test_hooks.py, DeployGateTests.test_the_reader_reads_its_own_edges_as_bash_does: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `echo $$''\'' ; git tag v1 ; echo "''"`, `echo $''\c''; git tag v2; echo ''x''`, `echo {W..a..5}''x''; git tag v3; echo ''y''` and on `cat <<$''EOF''`, `EOF`, `git tag v4` and `$EOF` on four lines, and exits 0 silently on `echo $$''git tag v5''` and on `cat <<$''EOF''`, `git tag v6` and `EOF` on three lines; in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py blocks with the feedback output on the same four shapes with `git commit -am x` in place of the tag, and blocks a call past the brace limit that commits nothing with a message starting "Blocked: red-guard could not read"; and in SecretGuardTests.test_a_commit_it_cannot_read_is_blocked and TicketSyncTests.test_a_commit_it_cannot_read_is_blocked, secret_guard.py with an AWS key staged and ticket_sync.py with a change in progress each exit 2 on `git commit -m x; echo ` followed by 14 `{a,b}` groups, with a message naming the hook and no traceback'
+proves: 'in tests/test_hooks.py, DeployGateTests.test_the_reader_reads_its_own_edges_as_bash_does: with gatedCommands ["^git tag "], deploy_gate.py exits 2 as a gated command on `echo $''\c''; git tag v2; echo ''x''`, `echo {W..a..5}''x''; git tag v3; echo ''y''` and on `cat <<$''EOF''`, `EOF`, `git tag v4` and `$EOF` on four lines, exits 2 with a message saying bash and zsh read the call differently on `echo $$''\'' ; git tag v1 ; echo "''"` and on `cat <<$"EOF"`, `EOF`, `git tag v4` and `$EOF` on four lines, and exits 0 silently on `echo $$''git tag v5''` and on `cat <<$''EOF''`, `git tag v6` and `EOF` on three lines; in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py blocks with the feedback output on the `$''\c''`, range and heredoc shapes with `git commit -am x` in place of the tag, and blocks with a message starting "Blocked: red-guard could not read" on the `$$''\''` shape and on a call past the brace limit that commits nothing; and in SecretGuardTests.test_a_commit_it_cannot_read_is_blocked and TicketSyncTests.test_a_commit_it_cannot_read_is_blocked, secret_guard.py with an AWS key staged and ticket_sync.py with a change in progress each exit 2 on `git commit -m x; echo ` followed by 14 `{a,b}` groups, with a message naming the hook and no traceback'
 status: in-progress
 executed_by: single
 branch: ticket/0003-T9

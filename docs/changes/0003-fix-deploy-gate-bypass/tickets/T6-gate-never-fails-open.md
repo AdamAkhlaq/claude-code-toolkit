@@ -12,7 +12,7 @@ files:
     docs/changes/0003-fix-deploy-gate-bypass/intent.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_gate_never_fails_open_on_a_long_or_nested_call: with gatedCommands ["^git tag ", "^git push .*--force"], deploy_gate.py exits 2 on `env git push origin` followed by 70 refs and `--force`, exits 2 within 5 seconds on 40 `eval` words before `git tag v1`, exits 2 with a message saying the call is too long to read on a call of 200000 words, and exits 0 silently within 5 seconds on `env git add` followed by 5000 paths; and the `deploy_gate.py` entry in hooks/hooks.json has a timeout and `"onFailure": "block"`'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T6
 ---
@@ -191,3 +191,20 @@ Live check, 2026-10-25: a headless `claude --plugin-dir <this checkout> -p --per
 | `f() { shift 2; "$@"; }; X=/bin/sh f -c 2 bash -c 'git tag v4'` | blocked, same message                                                                                                      |
 
 `git for-each-ref refs/tags` in the repo afterwards listed nothing.
+
+### Verifier 2026-10-25 16:34
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. Added on this branch (8c4f8f9, extended in fda616c, 9e780b6, 919b934, f36b24d). It runs the hook as a subprocess and reads `hooks/hooks.json`. In scratch copies with this branch's `tests/test_hooks.py`, it fails against the hook from `change/0003-fix-deploy-gate-bypass` (`AssertionError: 0 != 2`, the padded `env git push ... --force`) and against the hook from 9a54a19 (`AssertionError: 0 != 2 : SHELL=/bin/bash eval 'git tag v1'`).
+3. proving test run: exit 0, `Ran 1 test in 1.125s OK` (`python3 -m unittest tests.test_hooks.DeployGateTests.test_the_gate_never_fails_open_on_a_long_or_nested_call`)
+4. feedback command: exit 0, `Ran 78 tests in 10.050s OK` (`python3 -m unittest discover -s tests`)
+5. acceptance: 4 of 4 checked, none failed. The proving test passes (check 3). Every other test passes, and the test diff against the integration branch is 56 lines added, none removed. The README's `deploy-gate` paragraph says a call too long to read is blocked, and `intent.md` says a quoted mention is not gated, an unquoted one is on purpose, and "its tickets" (read in the diff). The CHANGELOG `[Unreleased]` entry says a call too long to read is blocked and that the hook entry has a timeout with `"onFailure": "block"`, so the gate never fails open.
+6. scope: ok (CHANGELOG.md, README.md, intent.md, hooks/hooks.json, hooks/scripts/deploy_gate.py, tests/test_hooks.py, plus the ticket)
+7. tests intact: ok (no deleted assertions, no skip or expected-failure markers)
+
+Probe, `^git tag ` unless named, this branch's hook against the integration branch's: 50 shapes, including the last reopen's three cases, the `ionice` decoy, `sudo -u sh eval`, `env -u bash eval`, chained and nested `eval` and `bash -c`, wrappers, keywords, subshells, substitutions, heredocs and quoted mentions. Exit codes matched on every one. `^npm publish|^gh release create`, `(?i)^`, `\A`, `(?m)^`, `^(?:...|...)`, `^[^#]*` and an unanchored pattern over 8 commands also matched on every one. Timing: a 299000-character word, then `&& git tag v1`, exit 2 in 1.2 s; 20000 `bash -c x`, 1000 `eval x` and 1000 nested `$(` were blocked as too long in 0.2 s or less; `npm publish` repeated 24000 times against `^npm publish.*--force` exited 0 in 2.7 s. `claude plugin validate .` passes, with the `.DS_Store` warning.
+
+Nit, not a reopen: f36b24d dropped a space in the proving test, which now reads `config =json.loads(...)`.

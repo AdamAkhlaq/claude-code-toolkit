@@ -12,7 +12,7 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_word_is_read_as_bash_expands_it: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `$''\x67it'' tag v1`, `$''\147it'' tag v2`, `{git,tag} v3`, `git {tag,v4}`, `{git,} tag v5` and `{g..g}it tag v6`, exits 2 with a message saying the call is too long to read on a word whose braces expand to more than 10000 words, and exits 0 silently on `echo ''{git,tag} v1''`, `{ echo git; }`, `gi{t,} tag v5` and `{f..h}it tag v6`, which bash runs as `git gi tag v5` and `fit git hit tag v6`; and in RedGuardTests, red_guard.py blocks with the feedback output on `$''\x67it'' commit -am x` and `git {commit,-am,x}`, and blocks with a message naming red-guard, not a traceback, on a commit whose braces expand to more than 10000 words'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T8
 ---
@@ -75,3 +75,18 @@ Live check, 2026-10-25: a headless `claude --plugin-dir <this checkout> -p --per
 | `mkdir -p src/{a,b} && ls src`        | ran, created `src/a` and `src/b`                                                                          |
 
 `git for-each-ref refs/tags` afterwards listed nothing, and the log still held only the first commit.
+
+### Verifier 2026-10-25 17:47
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. `DeployGateTests.test_a_word_is_read_as_bash_expands_it` was added on this branch (a025845), and the two `RedGuardTests.test_reworded_commits_are_recognised` cases and the brace-limit block were added to it. Run against the integration branch's hooks with this branch's `tests/test_hooks.py`, both fail: `AssertionError: 0 != 2 : $'\x67it' tag v1` and `AssertionError: 0 != 2 : $'\x67it' commit -am x`.
+3. proving test run: exit 0, `python3 -m unittest tests.test_hooks.DeployGateTests.test_a_word_is_read_as_bash_expands_it tests.test_hooks.RedGuardTests.test_reworded_commits_are_recognised tests.test_hooks.NoConfigTests -v`: "Ran 4 tests in 2.852s OK"
+4. feedback command: exit 0, `python3 -m unittest discover -s tests`: "Ran 80 tests in 14.925s OK"
+5. acceptance: 3 of 3 checked. Proving test passes (check 3). Every other test passes (check 4); the only test edits are added cases, no lines removed. README `deploy-gate` paragraph and the CHANGELOG `[Unreleased]` `deploy-gate` and `red-guard` entries read in the diff and say what the line asks, including that `red-guard` blocks a commit it cannot read.
+6. scope: ok. Changed: `CHANGELOG.md`, `README.md`, `hooks/scripts/_common.py`, `hooks/scripts/deploy_gate.py`, `hooks/scripts/red_guard.py`, `tests/test_hooks.py` and the ticket, all in `files`.
+7. tests intact: ok. No removed lines, skips or expected-failure markers in `git diff change/0003-fix-deploy-gate-bypass...HEAD -- tests/`.
+
+Independent probe, from a mktemp directory, of 19 calls run in `/bin/bash` with a stub `git` and through `deploy_gate.py` with `["^git tag "]`: every call bash ran as `git tag <arg>` was blocked (`$'\x67it' tag v1`, `{git,tag} v3`, `{g..g}it tag v6`, `""{git,tag} v1`, `x=1 {git,tag} v1`, `$'\147\151\164' tag v1`, `{{git,tag},v6}`, `git {,tag} v1`, `{git,tag,} v1`). `{git,tag,}` with no further word runs a bare `git tag`, which the pattern's trailing space does not match even written literally (`git tag` exits 0 too), so it is the pattern, not the reader. Extra blocks on `{a,git} tag v1`, `{git,tag}{,} v1` and `{git,x}' 'tag v1` are the gate failing closed on unquoted words, as the README states.

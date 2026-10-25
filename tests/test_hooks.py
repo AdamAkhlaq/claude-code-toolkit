@@ -248,6 +248,35 @@ class DeployGateTests(HookCase):
             self.assertEqual(code, 2, command[:20])
             self.assertLess(time.monotonic() - started, 5, command[:20])
 
+    def test_a_word_is_read_as_bash_expands_it(self):
+        self.configure(gatedCommands=["^git tag "])
+        for command in (
+            "$'\\x67it' tag v1",
+            "$'\\147it' tag v2",
+            "$'\\u0067it' tag v2",
+            "$'\\U00000067it' tag v2",
+            "g$'\\x69't tag v2",
+            "git $'\\x74ag' v2",
+            "$'git\\0xyz' tag v2",
+            "eval $'\\x67it tag v2'",
+            "bash -c $'\\x67it tag v2'",
+            "{git,tag} v3",
+            "git {tag,v4}",
+            "{git,} tag v5",
+            "{,git} tag v5",
+            "{g..g}it tag v6",
+            "{git,tag,v6}",
+            "{{git,tag},v6}",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err)
+        code, _, err = run_hook("deploy_gate.py", bash_event("echo " + "{a,b}" * 14 + " && git status"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("too long to read", err)
+        for command in ("echo '{git,tag} v1'", 'echo "{git,tag}" v1', "echo $'{git,tag}' v1", "echo \\{git,tag} v1", "{ echo git; }", "gi{t,} tag v5", "{f..h}it tag v6", "mkdir -p src/{a,b} && cp app.py{,.bak}"):
+            self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+
     def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
         self.configure(gatedCommands=["^git tag ", "^git push .*--force"])
         refs = " ".join(f"r{n}" for n in range(70))
@@ -554,10 +583,16 @@ class RedGuardTests(HookCase):
             "x=$'\\'' git commit -am x; echo \"'\"",
             "cat <<E'OF'\nEOF\ngit commit -am x\nE",
             "cat <<E:OF\nE:OF\ngit commit -am x\nE",
+            "$'\\x67it' commit -am x",
+            "git {commit,-am,x}",
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
             self.assertIn("boom", err)
+        code, _, err = run_hook("red_guard.py", bash_event("git commit -am " + "{a,b}" * 14), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("red-guard", err)
+        self.assertNotIn("Traceback", err)
         for command in ('echo "git commit"', "git log --grep commit", "git -c commit.gpgsign=false status"):
             self.assertEqual(run_hook("red_guard.py", bash_event(command), self.root), (0, "", ""), command)
 

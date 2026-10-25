@@ -11,7 +11,7 @@ files:
     README.md,
     CHANGELOG.md,
   ]
-proves: 'in tests/test_hooks.py, DeployGateTests.test_a_word_is_read_as_bash_expands_it: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `$''\x67it'' tag v1`, `$''\147it'' tag v2`, `{git,tag} v3`, `git {tag,v4}`, `gi{t,} tag v5` and `{f..h}it tag v6`, exits 2 with a message saying the call is too long to read on a word whose braces expand to more than 10000 words, and exits 0 silently on `echo ''{git,tag} v1''` and `{ echo git; }`; and in RedGuardTests, red_guard.py blocks with the feedback output on `$''\x67it'' commit -am x` and `git {commit,-am,x}`, and blocks with a message naming red-guard, not a traceback, on a commit whose braces expand to more than 10000 words'
+proves: 'in tests/test_hooks.py, DeployGateTests.test_a_word_is_read_as_bash_expands_it: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `$''\x67it'' tag v1`, `$''\147it'' tag v2`, `{git,tag} v3`, `git {tag,v4}`, `{git,} tag v5` and `{g..g}it tag v6`, exits 2 with a message saying the call is too long to read on a word whose braces expand to more than 10000 words, and exits 0 silently on `echo ''{git,tag} v1''`, `{ echo git; }`, `gi{t,} tag v5` and `{f..h}it tag v6`, which bash runs as `git gi tag v5` and `fit git hit tag v6`; and in RedGuardTests, red_guard.py blocks with the feedback output on `$''\x67it'' commit -am x` and `git {commit,-am,x}`, and blocks with a message naming red-guard, not a traceback, on a commit whose braces expand to more than 10000 words'
 status: in-progress
 executed_by: single
 branch: ticket/0003-T8

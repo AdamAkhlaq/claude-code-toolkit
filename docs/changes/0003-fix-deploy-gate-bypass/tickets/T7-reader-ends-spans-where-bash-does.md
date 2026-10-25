@@ -10,7 +10,9 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_the_reader_ends_quotes_heredocs_and_substitutions_where_bash_does: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `echo $''a\''b''; git tag v1; echo ''c''`, on `cat <<E''OF''`, `EOF`, `git tag v2` and `E` on four lines, on `cat <<E:OF`, `E:OF`, `git tag v3` and `E` on four lines, on ``echo `echo \`git tag v4\`` ``, and on `x="$( : # )`, `git tag v5` and `)"` on three lines, and exits 0 silently on `cat <<E''OF''`, `git tag v6` and `EOF` on three lines; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py blocks with the feedback output on `echo $''a\''b''; git commit -am x; echo ''c''` and on `cat <<E''OF''`, `EOF`, `git commit -am x` and `E` on four lines'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T7
 ---
 
 ## Context

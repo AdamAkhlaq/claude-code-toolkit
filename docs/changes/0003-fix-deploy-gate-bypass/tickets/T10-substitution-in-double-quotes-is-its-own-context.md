@@ -10,7 +10,9 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_substitution_inside_double_quotes_is_read_in_its_own_context: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `x="$(printf "%s" "a''b")"; git tag v1; y="$(printf "%s" "c''d")"`, `echo "$(echo "''")"; git tag v2; echo "$(echo "''")"`, ``echo "`echo "''"`"; git tag v3; echo "`echo "''"`"``, `echo "$(echo "''")" ; echo '' #'' ; git tag v4`, `echo "$(echo "it''s")"; {git,tag} v5` and `echo "$(echo ''"'')"; git tag v6; echo "$(echo ''"'')"`, and exits 0 silently on `echo "$(echo "git tag v7")"` and `echo "$(echo "''")"; echo "git tag v8"`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py blocks with the feedback output on `x="$(printf "%s" "a''b")"; git commit -am x; y="$(printf "%s" "c''d")"`'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T10
 ---
 
 ## Context

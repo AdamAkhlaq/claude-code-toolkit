@@ -11,7 +11,7 @@ files:
     README.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_case_or_parameter_form_the_reader_does_not_model_blocks_the_call: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `echo "$(case x in x) echo a;| *) git tag v1;; esac)"` and `echo "$(cat <(case x in a) echo hi;; esac) ; git tag v1 )"`; exits 2 naming a `case` it cannot read on `echo "$(f() case x in x) git tag v1;; esac; f)"`, `echo "$(repeat 1 case x in x) git tag v1;; esac)"`, `echo "$(echo;\` / `case x in x) git tag v1;; esac)"` (lines joined by a newline), `echo "$(case x in ($(echo a)) echo hi;; esac; git tag v1)"`, `echo "$(case x in x(|y)) git tag v1;; esac)"` and `echo "$(case x { x) echo a;; })"; git tag v1; echo ")"`; exits 2 saying bash and zsh read it differently on `echo "$(echo ${x/)/y}; git tag v1)"`; and exits 0 silently on `echo "$(case x in a) echo hi;; esac)"`, `echo "$(case x in (a) echo hi;; esac)"`, `echo "$(cat <(echo a))"` and `echo "$(echo ${x:-a})"`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `echo "$(f() case x in a) echo "''";; esac)"; git commit -am x; echo "''"` and `echo "$(case x { x) echo a;; })"; git commit -am x; echo ")"`'
-status: reopened
+status: in-progress
 executed_by: single
 branch: ticket/0003-T12
 ---

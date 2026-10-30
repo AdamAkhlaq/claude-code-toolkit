@@ -347,6 +347,7 @@ class DeployGateTests(HookCase):
             """echo "a\\\nb$(echo "'")"; git tag v1; echo "'\"""",
             """echo "$(echo "'" # "\n)"; git tag v1; echo "'\"""",
             """echo "$(cat <<'EOF'\n"\nEOF\n)"; git tag v1; echo '"'""",
+            """echo "$(( 1 <<EOF\n))"; git tag v1\nEOF""",
         ):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
@@ -356,6 +357,10 @@ class DeployGateTests(HookCase):
         self.assertIn("bash and zsh", err)
         for command in ('echo "$(echo "git tag v7")"', """echo "$(echo "'")"; echo "git tag v8\"""", 'echo "${x:-git tag v9}"'):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+        started = time.monotonic()
+        code, _, err = run_hook("deploy_gate.py", bash_event('echo "' + '$((echo "' * 40 + "x" + '") )' * 40 + '"; git tag v1'), self.root)
+        self.assertEqual(code, 2)
+        self.assertLess(time.monotonic() - started, 5)
 
     def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
         self.configure(gatedCommands=["^git tag ", "^git push .*--force"])

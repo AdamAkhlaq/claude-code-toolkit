@@ -35,3 +35,40 @@ Seam: the hook scripts as subprocesses. Write the proving test first and commit 
 - `CHANGELOG.md`'s `[Unreleased]` `deploy-gate` entry says a substitution inside double quotes is read in its own quoting context.
 
 ## Evidence
+
+### Evidence 2026-10-30 18:19
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+....................................................................................
+----------------------------------------------------------------------
+Ran 84 tests in 15.392s
+
+OK
+```
+
+Per `CLAUDE.md`, the family was checked first in `/bin/bash` 3.2 and `/bin/zsh` with a stub `git` printing to stderr, each case run through `deploy_gate.readings` and `_common.is_git_commit` as well, and every member that got past a hook went into the proving test, committed failing before the code changed (f98eb2d, then 5a59992 for the rest of the family). Members beyond the ticket's cases: ``"`echo '"'`"``, `"${x:-$(echo "'")}"`, ``"${x:-`echo "'"`}"``, `"${x:-${y:-"'"}}"`, an escaped backtick span inside a double-quoted backtick span, a backslash-newline before the substitution, and a `#` comment or a quoted-delimiter heredoc holding `"` inside `"$(...)"`. bash 3.2 rejects the last two, and a `case` inside `"$(...)"`, but zsh runs the gated command after them, so they are read as zsh reads them and blocked. In a double-quoted `${...}`, bash takes a `'...'` span as a quote and zsh as literal text; they end the span apart only when it holds `}`, `"`, a backtick or a `$(`, `${` or `$[`, which now raises `ShellsDiffer`.
+
+The fix, in `_common`:
+
+- `shell_source` reads each double-quoted string with `double_quoted`, which reads `$(...)` (`closing_paren`), a backtick span and `${...}` (`parameter_close`) in their own context, writes them back as an empty `$()` or `${}`, and appends each substitution's script to `spans`. Every flat reader after it, shlex included, sees no quote inside the string. `shell_source`'s own quote state now only tracks `'`.
+- `closing_paren` and `keyword_at` moved from `deploy_gate.py` to `_common`. `closing_paren` reads `"` with `double_quoted`, so two-deep nesting works, skips backtick spans and `$'...'` spans (the `$'` check is now `ansi_c_span`, shared with `shell_source`), and reads a `((` whose inner `(` closes just before the outer `)` as arithmetic, where `<<` is a shift. `ansi_c_close` became `escaped_close(command, index, mark)` so backtick spans use it too.
+- `deploy_gate.readings` reads every span `shell_source` collected, so `echo "$(echo "git tag v7")"` stays silent and `echo "$(git tag v1)"` is still caught.
+
+Boundaries of the new code, probed the same way: backticks, `$'\''`, `$$'\''` and an escaped `"` inside `"$(...)"`; `"$(...)"` holding `"$(echo ")")"`; `$((...))` holding a heredoc, a quote, `2#1`, a nested `$((`, or a non-arithmetic `$((echo x) )`; `"${x:-{a}}"`, `"${x:-\}}"`, `"${x#"}"}"`, `"${x/'}'/a}"`, `"${x:-'\}'}"`, an unclosed `'` and three-deep `${`; `"a\"b'"`, `"a\\"`, `"#"`, and a heredoc on the line of a double-quoted substitution. All are blocked or silent as bash and zsh run them, apart from two the hook blocks that both shells reject (`"${x:-'`'}"`, `"${x:-'${y'}"`). The probe found two faults in the first draft, both fixed before this evidence: `"$(( 1 <<EOF\n))"; git tag v1\nEOF`got past because`closing_paren`read the shift as a heredoc (a regression against the flat reader, now in the proving test), and nesting`$((echo "`doubled the reading at every level, 20 levels taking 21 s, because a non-arithmetic`((`is read twice;`closing_paren` is now cached per call, and a 40-level case is in the proving test, which fails without the cache.
+
+Timing through `deploy_gate.readings` and `is_git_commit`, all under 1.2 s: a 290,000-character double-quoted word of `a'`, 20,000 distinct `$()` and 50,000 backtick spans in one string, 100,000 `'` inside a double-quoted `${...}`, 200 nested closed `$((`, 100 nested `$(( "`. Deeper nesting (300 `"$(`, 2,000 `${`) is blocked as too long to read or by `RecursionError`, which every hook catches and blocks on. `claude plugin validate .` passes with the same warnings as before this branch (untracked `.DS_Store` files).
+
+`red-guard` still does not read a commit inside a double-quoted substitution or a heredoc body, such as `echo "$(git commit -am x)"`: reading one needs `red_guard.py` and `commit_checkout` changed and the heredoc-body reader moved out of `deploy_gate.py`, so it did not fall out of this ticket's files, and its line in `docs/backlog.md` stays. A quote inside such a substitution no longer hides a commit after it, which `RedGuardTests.test_reworded_commits_are_recognised` pins.
+
+Live check, 2026-10-30: first in this session, which loads the plugin from this checkout, then in a headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` session in a throwaway repo with `"gatedCommands": ["^git tag "]`, `"feedbackCommand": "echo boom-red; exit 1"`, a modified `app.py`, no `RELEASE_AUTHORIZED` and no marker, one Bash call per command. No tag was created and nothing was committed.
+
+| Command                                                                | Result                                                                                                         |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `x="$(printf "%s" "a'b")"; git tag v1; y="$(printf "%s" "c'd")"`       | blocked: "Blocked: 'x="$(printf "%s" "a'b")"; git tag v1; ...' matches gated command pattern '^git tag '"      |
+| `echo "${x:-'"'}"; git tag v2; echo "'"`                               | blocked: "Blocked: red-guard could not read this Bash call (bash and zsh read '"' inside "${...}" differently" |
+| `echo "$(( 1 <<EOF` / `))"; git tag v3` / `EOF`                        | blocked: "Blocked: 'echo "$(( 1 <<EOF ... matches gated command pattern '^git tag '"                           |
+| `x="$(printf "%s" "a'b")"; git commit -am x; y="$(printf "%s" "c'd")"` | blocked: "Commit stopped: the feedback command is red."                                                        |
+| `echo "$(echo "'")"; echo "git tag v8"`                                | ran: `'` then `git tag v8`                                                                                     |

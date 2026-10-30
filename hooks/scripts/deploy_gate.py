@@ -15,7 +15,7 @@ import os
 import re
 import sys
 
-from _common import BRACES, SHELLS, WORD_START, ShellsDiffer, Unreadable, block, git_options, heredoc_at, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, skip_heredoc_bodies, tool_input
+from _common import BRACES, SHELLS, ShellsDiffer, Unreadable, block, closing_paren, git_options, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
 
 MARKER_RELPATH = ".claude/.release-authorized"
 
@@ -40,8 +40,8 @@ def readings(command: str, budget=None, seen=None) -> list:
     simple command. A word holding whitespace came from quotes and names no
     program, which keeps `echo "git tag v1"` silent. `git` is read past its
     global options as well, and the scripts of `eval`, `bash -c`, `$(...)` and
-    backticks are read as commands of their own, in the body of a heredoc with
-    an unquoted delimiter too. Every `eval` or shell word is read into, since
+    backticks are read as commands of their own, inside double quotes and in
+    the body of a heredoc with an unquoted delimiter too. Every `eval` or shell word is read into, since
     an earlier one may be an assignment's value or a wrapper's argument, such
     as `SHELL=/bin/bash eval '...'`, and a script already read in the call is
     not read again. Every word read or scanned counts against BUDGET and every
@@ -53,7 +53,8 @@ def readings(command: str, budget=None, seen=None) -> list:
     spend(budget, 0, len(command))
     found = []
     bodies = []
-    inners = substitutions(shell_source(command, bodies))
+    spans = []
+    inners = substitutions(shell_source(command, bodies, spans)) + spans
     for body in bodies:
         inners.extend(substitutions(body, quotes=False))
     for inner in inners:
@@ -199,59 +200,6 @@ def substitutions(command: str, quotes: bool = True) -> list:
             index = end
         index += 1
     return found
-
-
-def closing_paren(command: str, start: int) -> int:
-    """The index of the `)` that closes the `(` at `start`, or the end of `command`.
-
-    Parentheses in quoted text, after a backslash, in a `#` comment or in a
-    heredoc body do not count, nor does the `)` that ends a `case` pattern.
-    """
-    depth = 0
-    cases = []
-    pending = []
-    quote = ""
-    index = start
-    while index < len(command):
-        char = command[index]
-        if char == "\\" and quote != "'":
-            index += 2
-            continue
-        if quote:
-            if char == quote:
-                quote = ""
-        elif char in "'\"":
-            quote = char
-        elif char == "#" and index > start and command[index - 1] in WORD_START:
-            end = command.find("\n", index)
-            index = len(command) if end == -1 else end
-            continue
-        elif char == "\n" and pending:
-            index = skip_heredoc_bodies(command, index + 1, pending)
-            pending = []
-            continue
-        elif char == "<" and (heredoc := heredoc_at(command, index)):
-            pending.append(heredoc[1:])
-            index = heredoc[0]
-            continue
-        elif keyword_at(command, index, "case"):
-            cases.append(depth)
-        elif keyword_at(command, index, "esac") and cases:
-            cases.pop()
-        elif char == "(":
-            depth += 1
-        elif char == ")" and not (cases and cases[-1] == depth):
-            depth -= 1
-            if depth == 0:
-                return index
-        index += 1
-    return len(command)
-
-
-def keyword_at(command: str, index: int, word: str) -> bool:
-    before = command[index - 1] if index else " "
-    after = command[index + len(word) : index + len(word) + 1] or " "
-    return command.startswith(word, index) and not (before.isalnum() or before == "_") and not (after.isalnum() or after == "_")
 
 
 def main() -> int:

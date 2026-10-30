@@ -463,6 +463,10 @@ class DeployGateTests(HookCase):
             'echo "$(echo a 2>&1)"',
         ):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+        started = time.monotonic()
+        code, _, err = run_hook("deploy_gate.py", bash_event('echo "' + '$(echo ${x:-"' * 200 + "x" + '"})' * 200 + '"; git tag v1'), self.root)
+        self.assertEqual(code, 2)
+        self.assertLess(time.monotonic() - started, 5)
 
     def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
         self.configure(gatedCommands=["^git tag ", "^git push .*--force"])

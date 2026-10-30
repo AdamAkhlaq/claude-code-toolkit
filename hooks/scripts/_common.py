@@ -263,8 +263,12 @@ class Unclosed(Unreadable):
     """A call holding a substitution or `${...}` in double quotes that never closes: the shells reject it, and reading on would hide the rest of the call."""
 
 
+class Unmodelled(Unreadable):
+    """A call holding a form the reader does not model where it decides where a substitution ends, such as a `case` where it cannot tell a command starts: reading it one way could hide the text after it."""
+
+
 def read_error(exc: Exception) -> str:
-    return str(exc) if isinstance(exc, (ShellsDiffer, Unclosed)) else type(exc).__name__
+    return str(exc) if isinstance(exc, (ShellsDiffer, Unclosed, Unmodelled)) else type(exc).__name__
 
 
 def expand_braces(script: str) -> str:
@@ -765,6 +769,7 @@ def substitution_end(command: str, index: int, spans=None):
 
 
 METACHARACTERS = " \t\n;&|()<>"
+CASE_OUTSIDE_COMMAND = "a `case` inside a substitution that is not at a command start it knows"
 COMMAND_LEADERS = ("!", "{", "do", "elif", "else", "if", "then", "time", "until", "while")
 
 
@@ -773,10 +778,18 @@ def closing_paren(command: str, start: int) -> int:
     """The index of the `)` that closes the `(` at `start`, or the end of `command`.
 
     Parentheses in quoted text, in a backtick span, after a backslash, in a
-    `#` comment, in a heredoc body or in arithmetic do not count, nor does a
-    `case` pattern's. `case` and `esac` count only as bash reads them: at the
-    start of a command, or `esac` in place of a pattern, so `cat case.txt` or
-    `echo case` does not open one. Double-quoted text is read by
+    `#` comment, in a heredoc body, in a `${...}` or in arithmetic do not
+    count, nor does a `case` pattern's. `case` and `esac` count only as bash
+    reads them: at the start of a command, or `esac` in place of a pattern, so
+    `cat case.txt` does not open one. A `case` is read only in the forms bash
+    documents, ending a branch with `;;`, `;&` or zsh's `;|`, and anything
+    else around one raises Unmodelled: a whole word `case` that is not its
+    subject or a pattern and not at a command start this reader knows, such
+    as zsh's `repeat 1 case` or `echo case`, a `(` after a pattern's first
+    character, or a subject not followed by `in`. A `${...}` holding
+    parentheses that do not balance raises ShellsDiffer, since bash 3.2 counts
+    them and zsh does not, after a run of `$` of any length too: zsh's lexer
+    takes a `$` before `{` as opening one. Double-quoted text is read by
     `double_quoted`, so a substitution nested in it keeps its own quotes. A
     `((` whose inner `(` closes just before the outer `)` is arithmetic, as
     bash reads `$((` and `((`, and so is `$[...]`: a `<<` there is a shift,
@@ -797,22 +810,36 @@ def closing_paren(command: str, start: int) -> int:
     while index < len(command):
         char = command[index]
         case = cases[-1] if cases and cases[-1][0] == depth else None
+        in_pattern = case is not None and case[1] == "pattern"
         if index > start and char not in METACHARACTERS and command[index - 1] in METACHARACTERS:
+            is_case = word_at(command, index, "case")
             if target:
                 target = False
+                command_start = False
+                if is_case:
+                    raise Unmodelled(CASE_OUTSIDE_COMMAND)
             elif case and case[1] == "head":
                 case[2] -= 1
                 if not case[2]:
+                    if not word_at(command, index, "in"):
+                        raise Unmodelled("a `case` whose subject is not followed by `in`")
                     case[1] = "pattern"
-            elif case and case[1] == "pattern":
+                    case[3] = False
+                    index += 2
+                    continue
+            elif in_pattern:
                 if word_at(command, index, "esac"):
                     cases.pop()
             elif command_start:
-                if word_at(command, index, "case"):
-                    cases.append([depth, "head", 2])
+                if is_case:
+                    cases.append([depth, "head", 2, False])
                 elif case and word_at(command, index, "esac"):
                     cases.pop()
                 command_start = any(word_at(command, index, word) for word in COMMAND_LEADERS)
+            elif is_case:
+                raise Unmodelled(CASE_OUTSIDE_COMMAND)
+        if in_pattern and char not in " \t\n(":
+            case[3] = True
         if char == "\\":
             index += 2
             continue
@@ -825,10 +852,19 @@ def closing_paren(command: str, start: int) -> int:
             index = escaped_close(command, index + 1, "`")
         elif char == "$" and command[index + 1 : index + 2] in ("$", "'"):
             close = ansi_c_span(command, index)
-            index = dollar_run(command, index) if close is None else close + 1
+            if close is not None:
+                index = close + 1
+                continue
+            end = dollar_run(command, index)
+            index = end - 1 if command.startswith("{", end) else end
             continue
         elif command.startswith("$[", index):
             index = arithmetic_close(command, index + 1, "[]")
+        elif command.startswith("${", index):
+            end = parameter_close(command, index + 2)
+            if not parentheses_balance(command, index + 2, end):
+                raise ShellsDiffer("bash and zsh end a substitution holding a `${...}` with an unbalanced parenthesis at different places: bash 3.2 counts it, zsh reads the `${...}` whole")
+            index = end
         elif char == "#" and index > start and command[index - 1] in WORD_START:
             end = command.find("\n", index)
             index = len(command) if end == -1 else end
@@ -848,17 +884,24 @@ def closing_paren(command: str, start: int) -> int:
             index = heredoc[0]
             continue
         elif char in "<>":
-            target = True
+            target = not command.startswith("(", index + 1)
         elif char in ";&|":
-            if case and case[1] == "body" and command.startswith((";;", ";&"), index):
-                case[1] = "pattern"
             command_start = True
+            if case and case[1] == "body" and command.startswith((";;", ";&", ";|"), index):
+                case[1] = "pattern"
+                case[3] = False
+                index += 2
+                continue
         elif char == "(":
             arithmetic = arithmetic_close(command, index + 1) if command.startswith("((", index) else None
-            if arithmetic is not None and command.startswith(")", arithmetic + 1):
+            if in_pattern:
+                if case[3]:
+                    raise Unmodelled("a `case` pattern holding a `(` after its first character")
+                case[3] = True
+            elif arithmetic is not None and command.startswith(")", arithmetic + 1):
                 index = arithmetic + 1
                 command_start = False
-            elif not (case and case[1] == "pattern"):
+            else:
                 depth += 1
                 command_start = True
         elif char == ")":
@@ -900,6 +943,26 @@ def arithmetic_close(command: str, start: int, pair: str = "()") -> int:
                 return index
         index += 1
     return len(command)
+
+
+def parentheses_balance(command: str, index: int, end: int) -> bool:
+    """True when the parentheses between `index` and `end` balance, counting as bash 3.2 does inside a substitution: not after a backslash or in quotes."""
+    depth = 0
+    while index < end:
+        char = command[index]
+        if char == "\\":
+            index += 1
+        elif char in "'\"":
+            close = command.find(char, index + 1, end)
+            index = end if close == -1 else close
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+        index += 1
+    return depth == 0
 
 
 def word_at(command: str, index: int, word: str) -> bool:

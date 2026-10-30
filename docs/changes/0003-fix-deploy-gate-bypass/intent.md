@@ -59,3 +59,7 @@ The third review, of `cd72334`, found five more ways past the gate, so T7 (the s
 ## Amendment 2026-10-25: two more tickets, again
 
 The fourth review, of `c96a43e`, found five regressions from T7 and T8 and one older gap, so T9 (the reader's own edges match bash, and every commit hook blocks a call it cannot read) and T10 (a substitution inside double quotes is read in its own quoting context) were appended: ten tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.
+
+## Amendment 2026-10-30: one more ticket
+
+The fifth review, of `74c8228`, found three regressions from T10, where `closing_paren` and `double_quoted` now decide where a double-quoted string ends and a misread hides the text after it, so T11 (a substitution inside double quotes ends where bash and zsh end it, or the call is blocked) was appended, taking the backlog line on an overrun failing closed: eleven tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.

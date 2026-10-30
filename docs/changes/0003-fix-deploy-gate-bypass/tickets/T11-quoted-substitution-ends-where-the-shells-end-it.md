@@ -10,7 +10,7 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_substitution_in_double_quotes_ends_where_the_shells_end_it: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `git log --grep "$(echo case)"; git tag v1; echo "$(echo esac)"`, on `echo "$(cat <<<EOF` / `)"; git tag v1; echo "x"` / `EOF` and on `echo "$( ((1 <<EOF))` / `)" "a"; git tag v1 # "` / `EOF` (lines joined by newlines); exits 2 saying bash and zsh read it differently on `echo "$$(" ; git tag v1 ; echo ")"` and `echo "$${x" ; git tag v1 ; echo "}"`; exits 2 saying a substitution never closes on `echo "$(echo hi`; and exits 0 silently on `echo "$(cat case.txt)"`, `echo "$$(echo hi)"` and `echo "$${HOME}"`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py blocks with the feedback output on `echo "$(cat case.txt)" && git commit -am x` and `echo "$( echo $((1 <<EOF)) x` / `)"; git commit -am x` / `EOF`'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T11
 ---
@@ -75,3 +75,16 @@ Live check, 2026-10-30: first in this session, which loads the plugin from this 
 | `echo "$(echo hi`                                                | blocked: "Blocked: red-guard could not read this Bash call (a substitution inside double quotes never closes) ..."                        |
 | `echo "$(cat case.txt 2>/dev/null)" && git commit -am x`         | blocked: "Commit stopped: the feedback command is red."                                                                                   |
 | `echo "$$(echo hi)" "$${HOME}" "$(echo case)"`                   | ran: `<pid>(echo hi) <pid>{HOME} case`                                                                                                    |
+
+### Verifier 2026-10-30 20:38
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok (id, title, blocked_by, files, proves, status in-progress, executed_by, branch present; Evidence quotes `python3 -m unittest discover -s tests` with exit 0)
+2. proving test present and meaningful: ok. `DeployGateTests.test_a_substitution_in_double_quotes_ends_where_the_shells_end_it` is new on this branch and the `RedGuardTests.test_reworded_commits_are_recognised` cases are added, both through the hook scripts as subprocesses. Run against the integration branch's hooks (`git archive change/0003-fix-deploy-gate-bypass` with this branch's `tests/test_hooks.py`) both fail: `AssertionError: 0 != 2 : git log --grep "$(echo case)"; git tag v1; echo "$(echo esac)"` and `AssertionError: 0 != 2 : echo "$(cat case.txt)" && git commit -am x`. Every case named in `proves`, probed one by one, exits 0 at base and 2 with the expected message at HEAD (release authorisation, "bash and zsh end the double-quoted text ...", "a substitution inside double quotes never closes"), and the three silent cases exit 0 with no output at both. With a stub `git` on PATH, `/bin/bash` and `/bin/zsh` both run the hidden tag in the `case`/`esac`, `<<<` and `((1 <<EOF))` cases, and on `echo "$$(" ; git tag v1 ; echo ")"` only zsh runs it, so the blocks match real bypasses.
+3. proving test run: exit 0, `Ran 2 tests in 5.095s OK` (`python3 -m unittest tests.test_hooks.DeployGateTests.test_a_substitution_in_double_quotes_ends_where_the_shells_end_it tests.test_hooks.RedGuardTests.test_reworded_commits_are_recognised -v`)
+4. feedback command: exit 0, `Ran 85 tests in 18.419s` / `OK` (`python3 -m unittest discover -s tests`)
+5. acceptance: 4 of 4 checked. Proving test passes (check 3). Every other test passes and the test diff only adds lines (check 7). Timing: `test_the_reader_ends_quotes_heredocs_and_substitutions_where_bash_does`, `test_a_substitution_inside_double_quotes_is_read_in_its_own_context` and `test_the_gate_never_fails_open_on_a_long_or_nested_call`, which hold the T6, T7 and T10 `assertLess(..., 5)` cases, pass in the feedback run. `CHANGELOG.md`'s `[Unreleased]` `deploy-gate` entry now says "A call whose double-quoted substitution never closes is blocked with a message saying so".
+6. scope: ok. Changed: `CHANGELOG.md`, `hooks/scripts/_common.py`, `hooks/scripts/deploy_gate.py`, `tests/test_hooks.py`, and the ticket itself. The backlog line the Evidence calls gone was removed in d7c2def, which added the ticket, not on this branch.
+7. tests intact: ok. `git diff change/0003-fix-deploy-gate-bypass...HEAD -- tests/` has no removed lines and no skip or expected-failure markers.

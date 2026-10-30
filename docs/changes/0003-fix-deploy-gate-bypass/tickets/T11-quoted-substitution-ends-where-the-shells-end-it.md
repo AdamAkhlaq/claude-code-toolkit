@@ -10,7 +10,9 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_substitution_in_double_quotes_ends_where_the_shells_end_it: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `git log --grep "$(echo case)"; git tag v1; echo "$(echo esac)"`, on `echo "$(cat <<<EOF` / `)"; git tag v1; echo "x"` / `EOF` and on `echo "$( ((1 <<EOF))` / `)" "a"; git tag v1 # "` / `EOF` (lines joined by newlines); exits 2 saying bash and zsh read it differently on `echo "$$(" ; git tag v1 ; echo ")"` and `echo "$${x" ; git tag v1 ; echo "}"`; exits 2 saying a substitution never closes on `echo "$(echo hi`; and exits 0 silently on `echo "$(cat case.txt)"`, `echo "$$(echo hi)"` and `echo "$${HOME}"`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py blocks with the feedback output on `echo "$(cat case.txt)" && git commit -am x` and `echo "$( echo $((1 <<EOF)) x` / `)"; git commit -am x` / `EOF`'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T11
 ---
 
 ## Context

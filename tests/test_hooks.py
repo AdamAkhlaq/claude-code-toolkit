@@ -463,6 +463,22 @@ class DeployGateTests(HookCase):
             'echo "$(echo a 2>&1)"',
         ):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+        for command in (
+            'echo "$(ca\\\nse x in x) git tag v1;; esac)"',
+            'echo "$(c\\\nase x in x) git tag v1;; esac)"',
+            'echo "$(case\\\n x in x) git tag v1;; esac)"',
+            'echo "$(echo $\\\n{x/)/y}; git tag v1)"',
+            'echo "$\\\n(git tag v1)"',
+            'echo "${x:-$\\\n(git tag v1)}"',
+            "cat <<EOF\n$\\\n(git tag v1)\nEOF",
+            "cat <<'EOF'\nx\\\nEOF\necho \"$\\\n(git tag v1)\"\nEOF",
+            "cat <<EOF\nx\\\nEOF\necho \"$(git tag v1)\"\nEOF",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("Blocked", err)
+        for command in ('x="$(git log \\\n--oneline)"', 'echo "a\\\nb"', "cat <<'EOF' > f.sh\nfoo \\\n  --bar\nEOF", "echo $(echo a \\\n b)"):
+            self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
         started = time.monotonic()
         code, _, err = run_hook("deploy_gate.py", bash_event('echo "' + '$(echo ${x:-"' * 200 + "x" + '"})' * 200 + '"; git tag v1'), self.root)
         self.assertEqual(code, 2)
@@ -829,6 +845,9 @@ class RedGuardTests(HookCase):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
             self.assertIn("`case`", err)
+        code, _, err = run_hook("red_guard.py", bash_event('echo "$(ca\\\nse x in x) echo "\'";; esac)"; git commit -am x; echo "\'"'), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("red-guard", err)
         code, _, err = run_hook("red_guard.py", bash_event("""echo "$$(" ; git commit -am x ; echo ")\""""), self.root)
         self.assertEqual(code, 2)
         self.assertIn("bash and zsh", err)

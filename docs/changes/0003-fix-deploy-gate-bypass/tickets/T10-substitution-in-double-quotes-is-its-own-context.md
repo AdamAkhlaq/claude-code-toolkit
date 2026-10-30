@@ -10,7 +10,7 @@ files:
     CHANGELOG.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_substitution_inside_double_quotes_is_read_in_its_own_context: with gatedCommands ["^git tag "], deploy_gate.py exits 2 on `x="$(printf "%s" "a''b")"; git tag v1; y="$(printf "%s" "c''d")"`, `echo "$(echo "''")"; git tag v2; echo "$(echo "''")"`, ``echo "`echo "''"`"; git tag v3; echo "`echo "''"`"``, `echo "$(echo "''")" ; echo '' #'' ; git tag v4`, `echo "$(echo "it''s")"; {git,tag} v5` and `echo "$(echo ''"'')"; git tag v6; echo "$(echo ''"'')"`, and exits 0 silently on `echo "$(echo "git tag v7")"` and `echo "$(echo "''")"; echo "git tag v8"`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py blocks with the feedback output on `x="$(printf "%s" "a''b")"; git commit -am x; y="$(printf "%s" "c''d")"`'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T10
 ---
@@ -72,3 +72,16 @@ Live check, 2026-10-30: first in this session, which loads the plugin from this 
 | `echo "$(( 1 <<EOF` / `))"; git tag v3` / `EOF`                        | blocked: "Blocked: 'echo "$(( 1 <<EOF ... matches gated command pattern '^git tag '"                           |
 | `x="$(printf "%s" "a'b")"; git commit -am x; y="$(printf "%s" "c'd")"` | blocked: "Commit stopped: the feedback command is red."                                                        |
 | `echo "$(echo "'")"; echo "git tag v8"`                                | ran: `'` then `git tag v8`                                                                                     |
+
+### Verifier 2026-10-30 19:25
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. `DeployGateTests.test_a_substitution_inside_double_quotes_is_read_in_its_own_context` was added on this branch and drives `deploy_gate.py` as a subprocess. It holds every `proves` case (v1 to v6 blocked, v7 and v8 silent) and 5 new commands in `RedGuardTests.test_reworded_commits_are_recognised`, which asserts exit 2 and the feedback output. With the integration branch's `_common.py` and `deploy_gate.py` in a scratch copy, both tests fail (`AssertionError: 0 != 2 : x="$(printf "%s" "a'b")"; git tag v1; ...` and the same for `git commit -am x`). Each `proves` command, run on its own through both versions of the hook, gets past the base code and blocks or stays silent as claimed on this branch.
+3. proving test run: 0, `Ran 2 tests in 3.138s OK` (both proving tests run on their own)
+4. feedback command: 0, `Ran 84 tests in 17.178s OK`
+5. acceptance: 4 of 4 checked, none failed. The proving test passes (check 3). The other tests pass, and the diff under `tests/` adds lines without removing any (51 to 52 test methods). The T6 and T7 timing tests, `test_the_gate_never_fails_open_on_a_long_or_nested_call` and `test_the_reader_ends_quotes_heredocs_and_substitutions_where_bash_does`, pass under their 5 s limits (2.53 s for both together). The `CHANGELOG.md` `[Unreleased]` `deploy-gate` entry now says "A `$(...)`, backtick span or `${...}` inside double quotes is read in its own quoting context".
+6. scope: ok (`CHANGELOG.md`, `hooks/scripts/_common.py`, `hooks/scripts/deploy_gate.py`, `tests/test_hooks.py`, and the ticket)
+7. tests intact: ok (no deleted lines under `tests/`, and no skip or expected-failure markers)

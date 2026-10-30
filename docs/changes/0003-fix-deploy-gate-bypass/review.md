@@ -139,12 +139,12 @@ Three passes from `REVIEW.md` over the delta `cd72334...c96a43e`, which holds T7
 
 ### Important
 
-- [ ] hooks/scripts/\_common.py:450 `shell_source` reads any `$'` as the start of an ANSI-C quote, including the second `$` of `$$`, where bash reads a plain `'...'`: `echo $$'\' ; git tag v1 ; echo "'"` passes `deploy-gate`, and the commit form passes `red-guard`, while bash runs the tag. A regression from T7's rewrite of `$'...'`; `cd72334` blocked it. Fix: take `$$` as one unit before testing for `$'`. (bugs)
-- [ ] hooks/scripts/\_common.py:179 `ANSI_C_NUMBER`'s `c(.)` takes the closing `'` of `$'\c'` as the control character, so the reader stays inside the quote that bash and zsh close: `echo $'\c'; git tag v1; echo 'x'` passes both hooks. A regression from T8. Fix: `c([^'])`. (security)
-- [ ] hooks/scripts/\_common.py:358 `sequence` writes the characters a letter range covers straight back into source text that is parsed again, so `{W..a..5}` puts a bare `\` in front of the next quote and shifts every quote after it, while bash 3.2 and zsh leave that range as written: `echo {W..a..5}'x'; git tag v1; echo 'y'` passes both hooks. A regression from T8. Fix: expand only a letter range whose ends are both upper or both lower case, as the shells do, and quote what any range produces. (security)
-- [ ] hooks/scripts/\_common.py:387 `heredoc_at` reads `<<$'EOF'` as delimiter `$EOF`, but bash and zsh close it at a line `EOF`, so `cat <<$'EOF'`, `EOF`, `git tag v1`, `$EOF` hides a line bash runs from both hooks. A regression from T7; `cd72334`'s regex did not match the form. Fix: drop a `$` right before a quote in the delimiter, as bash's quote removal does. (security)
-- [ ] hooks/scripts/secret_guard.py:72 `is_git_commit` can now raise `Unreadable`, and `secret-guard` and `ticket-sync` (`ticket_sync.py:49`) call it unguarded, so a commit past the brace limit crashes them with exit 1, which Claude Code does not treat as a block: `git commit -m x; echo {a,b}...` with a staged AWS key was blocked at `cd72334` and commits unscanned at `c96a43e`. A regression from T8, against `CLAUDE.md`'s rule that a hook which cannot read a command blocks it; T8's Evidence deferred it with no ticket. Fix: catch a reader error in both hooks as `red_guard.main` does, silent without config, and block naming the hook. (bugs, security, compliance)
-- [ ] hooks/scripts/\_common.py:237 Every flat reader (`shell_source`, `expand_braces`, `unquoted_positions`, and shlex itself) keeps one quote state, so a quote inside a `$(...)` or backtick span nested in double quotes flips it: `echo "$(echo "it's")"; {git,tag} v1` keeps the braces unexpanded, and the wider family passes `deploy-gate` with no braces at all, already at `cd72334`: `x="$(printf "%s" "a'b")"; git tag v1; y="$(printf "%s" "c'd")"`, `echo "$(echo "'")"; git tag v1; echo "$(echo "'")"`, its backtick form, and `echo "$(echo "'")" ; echo ' #' ; git tag v1`, where the misread quote makes a `#` look like a comment. bash runs the tag in each. Fix: track a substitution nested in double quotes as a new quoting context in the readers, or hand its text to the substitution reader and keep only an empty `$()` in the outer source. (bugs, found widened by the family check)
+- [x] 5e192a2 hooks/scripts/\_common.py:450 `shell_source` reads any `$'` as the start of an ANSI-C quote, including the second `$` of `$$`, where bash reads a plain `'...'`: `echo $$'\' ; git tag v1 ; echo "'"` passes `deploy-gate`, and the commit form passes `red-guard`, while bash runs the tag. A regression from T7's rewrite of `$'...'`; `cd72334` blocked it. Fix: take `$$` as one unit before testing for `$'`. (bugs)
+- [x] 5e192a2 hooks/scripts/\_common.py:179 `ANSI_C_NUMBER`'s `c(.)` takes the closing `'` of `$'\c'` as the control character, so the reader stays inside the quote that bash and zsh close: `echo $'\c'; git tag v1; echo 'x'` passes both hooks. A regression from T8. Fix: `c([^'])`. (security)
+- [x] 5e192a2 hooks/scripts/\_common.py:358 `sequence` writes the characters a letter range covers straight back into source text that is parsed again, so `{W..a..5}` puts a bare `\` in front of the next quote and shifts every quote after it, while bash 3.2 and zsh leave that range as written: `echo {W..a..5}'x'; git tag v1; echo 'y'` passes both hooks. A regression from T8. Fix: expand only a letter range whose ends are both upper or both lower case, as the shells do, and quote what any range produces. (security)
+- [x] 5e192a2 hooks/scripts/\_common.py:387 `heredoc_at` reads `<<$'EOF'` as delimiter `$EOF`, but bash and zsh close it at a line `EOF`, so `cat <<$'EOF'`, `EOF`, `git tag v1`, `$EOF` hides a line bash runs from both hooks. A regression from T7; `cd72334`'s regex did not match the form. Fix: drop a `$` right before a quote in the delimiter, as bash's quote removal does. (security)
+- [x] 5e192a2 hooks/scripts/secret_guard.py:72 `is_git_commit` can now raise `Unreadable`, and `secret-guard` and `ticket-sync` (`ticket_sync.py:49`) call it unguarded, so a commit past the brace limit crashes them with exit 1, which Claude Code does not treat as a block: `git commit -m x; echo {a,b}...` with a staged AWS key was blocked at `cd72334` and commits unscanned at `c96a43e`. A regression from T8, against `CLAUDE.md`'s rule that a hook which cannot read a command blocks it; T8's Evidence deferred it with no ticket. Fix: catch a reader error in both hooks as `red_guard.main` does, silent without config, and block naming the hook. (bugs, security, compliance)
+- [x] d5143d9 hooks/scripts/\_common.py:237 Every flat reader (`shell_source`, `expand_braces`, `unquoted_positions`, and shlex itself) keeps one quote state, so a quote inside a `$(...)` or backtick span nested in double quotes flips it: `echo "$(echo "it's")"; {git,tag} v1` keeps the braces unexpanded, and the wider family passes `deploy-gate` with no braces at all, already at `cd72334`: `x="$(printf "%s" "a'b")"; git tag v1; y="$(printf "%s" "c'd")"`, `echo "$(echo "'")"; git tag v1; echo "$(echo "'")"`, its backtick form, and `echo "$(echo "'")" ; echo ' #' ; git tag v1`, where the misread quote makes a `#` look like a comment. bash runs the tag in each. Fix: track a substitution nested in double quotes as a new quoting context in the readers, or hand its text to the substitution reader and keep only an empty `$()` in the outer source. (bugs, found widened by the family check)
 
 ### Nits
 
@@ -170,6 +170,46 @@ Taken by Adam Akhlaq on 2026-10-25 at the review gate:
 - The five regressions (`$$'`, `$'\c'`, letter ranges, `<<$'EOF'`, and `secret-guard` and `ticket-sync` crashing on a read error) become ticket T9, worked test-first and passed by a fresh verifier rather than fixed straight on the integration branch, since this round showed that reader fixes need an independent check.
 - The nested-quote gap becomes ticket T10: a substitution nested in double quotes is read as its own quoting context, test-first with its whole family and `red-guard` cases.
 - Two lines go into `CLAUDE.md`: a follow-up found while working a ticket or a review gets a home in the same change, and a reader change is probed at its own boundaries as well as along the families of what it fixes. `docs/backlog.md` is created as that home and holds every follow-up deferred so far in this change.
+
+### Waivers
+
+<none yet>
+
+## Review 2026-10-30 of 74c8228
+
+Three passes from `REVIEW.md` over the delta `c96a43e...74c8228`, which holds T9, T10 and the fourth round's doc commits, each in its own context. Every Important below was re-run against the hooks at `74c8228` and at `c96a43e`, in `/bin/bash` 3.2 and `/bin/zsh` with a stub `git` that prints to stderr. The fourth round's boxes above are ticked with the T9 and T10 fix commits. All three Importants are regressions from T10: before it, `closing_paren` only read the inside of a substitution, so a misread made `deploy-gate` read more; since T10 it decides where a double-quoted string ends for every reader, so the same misread hides the text after it.
+
+### Important
+
+- [ ] hooks/scripts/\_common.py:722 `closing_paren` takes the word `case` anywhere as the start of a `case` statement (`keyword_at` only checks the characters either side), so `case.txt`, `$case` or `echo case` inside `"$(...)"` makes it skip the real `)` and swallow the commands after it: `echo "$(cat case.txt)" && git commit -am x` passes `red-guard`, `secret-guard` and `ticket-sync`, and `git log --grep "$(echo case)"; git tag v1; echo "$(echo esac)"` passes `deploy-gate`. Both shells run the command; `c96a43e` blocked all of them. Fix: count `case` and `esac` only at command position, and add the forms to the T10 proving test for both hooks. (security)
+- [ ] hooks/scripts/\_common.py:718 `closing_paren` reads a heredoc at any `<<` outside quotes, including inside a here-string `<<<` and a shift in `((...))` or `$((...))` after the start of the span, so it skips to a later line equal to the "delimiter": `echo "$(cat <<<EOF`, `)"; git tag v1; echo "x"`, `EOF` and `echo "$( ((1 <<EOF))`, `)" "a"; git tag v1 # "`, `EOF` pass `deploy-gate`, and the commit forms, with `echo "$( echo $((1 <<EOF)) x`, `)"; git commit -am x`, `EOF`, pass `red-guard`. Both shells run them; `c96a43e` blocked all of them. Fix: step over `<<<` as one unit and skip `((...))`, `$((...))` and `$[...]` with `arithmetic_close` before testing for a heredoc. (bugs)
+- [ ] hooks/scripts/\_common.py:588 `double_quoted` and `parameter_close` (line 623) test for `$(`, `${` and a backtick one character at a time, so in `"$$(..."` or `"$${..."` the second `$` opens a substitution that zsh reads as the PID followed by a literal `(` or `{`, and the reader runs past the real closing quote: `echo "$$(" ; git tag v1 ; echo ")"`, `echo "$${x" ; git tag v1 ; echo "}"` and `echo "${x:-$$(}" ; git tag v1 ; echo ")"` pass `deploy-gate`, and their commit forms `red-guard`. zsh runs them, bash 3.2 rejects them; `c96a43e` blocked all of them, and T9 decided that the hooks fail closed where the shells disagree. Fix: take a run of `$` whole with `dollar_run` and raise `ShellsDiffer` when an even run comes before `(` or `{`. (bugs)
+
+### Nits
+
+- README.md:70 The `secret-guard` and `ticket-sync` rows (and their `CHANGELOG.md` line) say each blocks "a commit it cannot read", but both run on every Bash call and block any call they cannot read, as `echo {a,b}...` past the brace limit shows. Fix: say "a Bash call it cannot read", as the `red-guard` row does. (compliance)
+- CHANGELOG.md:9 The entry says a `'...'` span in a double-quoted `${...}` is blocked when it holds `}` or `"`; the code also blocks a backtick, `$(`, `${` and `$[`. Fix: write "such as `}` or `"`". (compliance)
+- docs/changes/0003-fix-deploy-gate-bypass/tickets/T10-substitution-in-double-quotes-is-its-own-context.md:60 A code span holding a backtick (``"${x:-'`'}"``) breaks every code span after it in the Evidence paragraph. Fix: write that span with double backticks. (compliance)
+- docs/backlog.md:4 The fourth round's out-of-pass note that the brace budget is per `shell_tokens` call, not per hook call, has no line here, against the rule that every follow-up gets a home. Fix: add the line. (compliance)
+- docs/changes/0003-fix-deploy-gate-bypass/review.md:142 The fourth round's six boxes were open after T9 and T10 closed them, as the fourth round found for the third. Ticked in this record with the fix commits. (compliance)
+
+0 Nits dropped.
+
+### Out of pass
+
+- `closing_paren`'s cache is never cleared and is keyed on whole command strings: fine in a one-shot hook process, unbounded if `_common` is ever imported and reused.
+- `double_quoted` reads `"$$$(...)"` as a substitution too; it only blocks more, and goes with the `$$` fix.
+- A substitution in double quotes that runs to the end of the call hides the rest of it; raising `Unreadable` there would make any future overrun fail closed.
+- `secret-guard` and `ticket-sync` still have no timeout or `"onFailure": "block"` in `hooks/hooks.json`; already in `docs/backlog.md`.
+- No pull request exists yet, so its statement of merge danger could not be checked.
+
+### Decisions
+
+Taken by Adam Akhlaq on 2026-10-30 at the review gate:
+
+- The three Importants become ticket T11, appended with `/toolkit:tickets 0003`, worked test-first and passed by a fresh verifier as T9 and T10 were; they stay open until T11 is done.
+- The four open Nits are fixed in eb1a408, and the out-of-pass notes on an overrun failing closed and on `closing_paren`'s cache get lines in `docs/backlog.md`.
+- `closing_paren` misreads were raised in the second, third and this round, so `CLAUDE.md` gets a line: a reader function whose answer starts to decide what other readers skip is probed again, branch by branch, as a bypass.
 
 ### Waivers
 

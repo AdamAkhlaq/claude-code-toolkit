@@ -390,8 +390,12 @@ class DeployGateTests(HookCase):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
             self.assertIn("never closes", err)
-        for command in ('echo "$(cat case.txt)"', 'echo "$$(echo hi)"', 'echo "$${HOME}"', 'echo "$$(git tag v1)"', 'cat <<<"$(echo x)"'):
+        for command in ('echo "$(cat case.txt)"', 'echo "$$(echo hi)"', 'echo "$${HOME}"', 'echo "$$(git tag v1)"', 'cat <<<"$(echo x)"', "cat <<EOF\n$$(git tag v1)\nEOF"):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+        started = time.monotonic()
+        code, _, err = run_hook("deploy_gate.py", bash_event('echo "' + "$$(" * 70_000 + ")" * 70_000 + '"; git tag v1'), self.root)
+        self.assertEqual(code, 2)
+        self.assertLess(time.monotonic() - started, 5)
 
     def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
         self.configure(gatedCommands=["^git tag ", "^git push .*--force"])
@@ -743,11 +747,13 @@ class RedGuardTests(HookCase):
             """echo "$(cat <<<EOF\n)"; git commit -am x; echo "x"\nEOF""",
             """echo "$( echo $((1 <<EOF)) x\n)"; git commit -am x\nEOF""",
             """echo "$( for ((i=1<<EOF; i<0; i++)); do :; done\n)"; git commit -am x\nEOF""",
-            """echo "$$(" ; git commit -am x ; echo ")\"""",
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
             self.assertIn("boom", err)
+        code, _, err = run_hook("red_guard.py", bash_event("""echo "$$(" ; git commit -am x ; echo ")\""""), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("bash and zsh", err)
         code, _, err = run_hook("red_guard.py", bash_event("git commit -am " + "{a,b}" * 14), self.root)
         self.assertEqual(code, 2)
         self.assertIn("red-guard", err)

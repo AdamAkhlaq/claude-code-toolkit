@@ -259,8 +259,12 @@ class ShellsDiffer(Unreadable):
     """A call bash and zsh read differently, such as `$$'\\''`, which bash reads as a plain quote after `$$` and zsh as a `$'...'` quote: a hook blocks it rather than read it one way."""
 
 
+class Unclosed(Unreadable):
+    """A call holding a substitution or `${...}` in double quotes that never closes: the shells reject it, and reading on would hide the rest of the call."""
+
+
 def read_error(exc: Exception) -> str:
-    return str(exc) if isinstance(exc, ShellsDiffer) else type(exc).__name__
+    return str(exc) if isinstance(exc, (ShellsDiffer, Unclosed)) else type(exc).__name__
 
 
 def expand_braces(script: str) -> str:
@@ -592,8 +596,9 @@ def double_quoted(command: str, index: int, spans=None) -> tuple:
     their own, as in bash and zsh, so in `"$(echo "it's")"` the quote closes
     at the last `"`. The text keeps each of them as an empty `$()` or `${}`,
     which no later reader can mistake for a quote, and drops each
-    backslash-newline. When `spans` is a list, the script of each substitution
-    is appended to it.
+    backslash-newline. A run of `$` is read whole, as in `dollar_quoted`.
+    When `spans` is a list, the script of each substitution is appended to it.
+    A substitution or `${...}` that never closes raises Unclosed.
     """
     text = []
     while index < len(command):
@@ -605,10 +610,17 @@ def double_quoted(command: str, index: int, spans=None) -> tuple:
                 text.append(command[index : index + 2])
             index += 2
             continue
+        if command.startswith("$$", index):
+            end = dollar_quoted(command, index, in_parameter=False)
+            text.append(command[index:end])
+            index = end
+            continue
         if (end := substitution_end(command, index, spans)) is not None:
             text.append("$()")
         elif command.startswith("${", index):
             end = parameter_close(command, index + 2, spans)
+            if end >= len(command):
+                raise Unclosed('a "${...}" inside double quotes never closes')
             text.append("${}")
         else:
             text.append(char)
@@ -617,18 +629,94 @@ def double_quoted(command: str, index: int, spans=None) -> tuple:
     return len(command), "".join(text)
 
 
+def dollar_quoted(command: str, index: int, in_parameter: bool) -> int:
+    """For the run of two or more `$` at `index` inside double quotes, the index of its last `$` when that one can open a span, or just past the run when it cannot.
+
+    bash and zsh expand `$$` as the PID, so after an even run a `(` or `{` is
+    literal text, and after an odd run the last `$` opens `$(...)` or
+    `${...}`. `literal_bracket_close` checks the bracket after an even run.
+    """
+    end = dollar_run(command, index)
+    if (end - index) % 2:
+        return end - 1
+    literal_bracket_close(command, end, in_parameter)
+    return end
+
+
+LITERAL_BRACKETS = 16
+literal_brackets_open = [0]
+
+
+@functools.lru_cache(maxsize=None)
+def literal_bracket_close(command: str, index: int, in_parameter: bool):
+    """For the `(` or `{` at `index` after an even run of `$` inside double quotes, the index of the bracket that closes it, or None when no bracket is there.
+
+    bash's parser takes that bracket as opening a span when it looks for the
+    closing quote, while zsh reads it as text, so where the two readings would
+    end the quote, or the `${...}` it is in when `in_parameter`, at different
+    places, the call raises ShellsDiffer. Each answer is cached, so a reading
+    that meets the bracket again takes it from here: without that, nesting
+    such brackets doubles the reading at every level. Each check scans the
+    bracket's whole span, so past LITERAL_BRACKETS nested inside one another,
+    which no real command writes, the call is Unreadable.
+    """
+    bracket = command[index : index + 1]
+    if bracket not in ("(", "{"):
+        return None
+    if literal_brackets_open[0] >= LITERAL_BRACKETS:
+        raise Unreadable
+    literal_brackets_open[0] += 1
+    try:
+        close = closing_paren(command, index) if bracket == "(" else parameter_close(command, index + 1)
+        agree = close < len(command) and read_as_text_reaches(command, index, close, in_parameter)
+    finally:
+        literal_brackets_open[0] -= 1
+    if not agree:
+        raise ShellsDiffer(f"bash and zsh end the double-quoted text holding $${bracket} at different places: bash reads {bracket} as opening a span, zsh as text after the PID")
+    return close
+
+
+def read_as_text_reaches(command: str, index: int, limit: int, in_parameter: bool) -> bool:
+    """True when double-quoted text, or the text of a `${...}` inside it when `in_parameter`, read from `index` as zsh reads it, reaches `limit` without closing, and the character at `limit` does not close it either."""
+    stop = "}" if in_parameter else '"'
+    while index < limit:
+        char = command[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == stop:
+            return False
+        if command.startswith("$$", index):
+            end = dollar_run(command, index)
+            if (end - index) % 2:
+                index = end - 1
+            else:
+                close = literal_bracket_close(command, end, in_parameter)
+                index = end if close is None else close + 1
+            continue
+        if in_parameter and char == '"':
+            index = double_quoted(command, index + 1)[0] + 1
+        elif (end := substitution_end(command, index)) is not None:
+            index = end + 1
+        elif command.startswith("${", index):
+            index = parameter_close(command, index + 2) + 1
+        else:
+            index += 1
+    return index == limit and command[limit] != stop
+
+
 SHELLS_DIFFER_IN_PARAMETER = re.compile(r'[}"`]|\$[({[]')
 
 
 def parameter_close(command: str, index: int, spans=None) -> int:
     """The index of the `}` that closes the `${...}` inside double quotes whose text starts at `index`, or the end of `command`.
 
-    A `"` opens nested double-quoted text, and `$(...)`, backticks and `${...}`
-    are read as in `double_quoted`, their scripts appended to `spans`. bash
-    reads a `'...'` span here as a quote and zsh as literal text, so a span
-    holding a character where that changes the reading, such as `}` or `"`,
-    raises ShellsDiffer; any other is read as zsh does, and an unclosed `'`,
-    which bash rejects, as well.
+    A `"` opens nested double-quoted text, and `$(...)`, backticks, `${...}`
+    and runs of `$` are read as in `double_quoted`, their scripts appended to
+    `spans`. bash reads a `'...'` span here as a quote and zsh as literal
+    text, so a span holding a character where that changes the reading, such
+    as `}` or `"`, raises ShellsDiffer; any other is read as zsh does, and an
+    unclosed `'`, which bash rejects, as well.
     """
     while index < len(command):
         char = command[index]
@@ -636,6 +724,9 @@ def parameter_close(command: str, index: int, spans=None) -> int:
             return index
         if char == "\\":
             index += 2
+            continue
+        if command.startswith("$$", index):
+            index = dollar_quoted(command, index, in_parameter=True)
             continue
         if char == '"':
             index = double_quoted(command, index + 1, spans)[0]
@@ -655,7 +746,8 @@ def substitution_end(command: str, index: int, spans=None):
     """The index of the close of the `$(...)` or backtick span at `index` inside double quotes, or None when neither starts there.
 
     When `spans` is a list, the span's script is appended to it, a backtick
-    span's with `\\\\`, `\\``, `\\$` and `\\"` unescaped, as bash does there.
+    span's with `\\\\`, `\\``, `\\$` and `\\"` unescaped, as bash does there. A
+    span that never closes raises Unclosed.
     """
     if command.startswith("$(", index):
         end = closing_paren(command, index + 1)
@@ -665,9 +757,15 @@ def substitution_end(command: str, index: int, spans=None):
         script = re.sub(r'\\([\\`$"])', r"\1", command[index + 1 : end])
     else:
         return None
+    if end >= len(command):
+        raise Unclosed("a substitution inside double quotes never closes")
     if spans is not None:
         spans.append(script)
     return end
+
+
+METACHARACTERS = " \t\n;&|()<>"
+COMMAND_LEADERS = ("!", "{", "do", "elif", "else", "if", "then", "time", "until", "while")
 
 
 @functools.lru_cache(maxsize=None)
@@ -675,12 +773,15 @@ def closing_paren(command: str, start: int) -> int:
     """The index of the `)` that closes the `(` at `start`, or the end of `command`.
 
     Parentheses in quoted text, in a backtick span, after a backslash, in a
-    `#` comment or in a heredoc body do not count, nor does the `)` that ends
-    a `case` pattern. Double-quoted text is read by `double_quoted`, so a
-    substitution nested in it keeps its own quotes. A `((` whose inner `(`
-    closes just before the outer `)` is arithmetic, as bash reads `$((`, so a
-    `<<` there is a shift, not a heredoc. A `((` that is not arithmetic is
-    read twice, so each answer is cached: without that, nesting such a span
+    `#` comment, in a heredoc body or in arithmetic do not count, nor does a
+    `case` pattern's. `case` and `esac` count only as bash reads them: at the
+    start of a command, or `esac` in place of a pattern, so `cat case.txt` or
+    `echo case` does not open one. Double-quoted text is read by
+    `double_quoted`, so a substitution nested in it keeps its own quotes. A
+    `((` whose inner `(` closes just before the outer `)` is arithmetic, as
+    bash reads `$((` and `((`, and so is `$[...]`: a `<<` there is a shift,
+    and `<<<` is a here-string, never a heredoc. A `((` that is not arithmetic
+    is read twice, so each answer is cached: without that, nesting such a span
     in double quotes doubles the reading at every level.
     """
     if command.startswith("((", start):
@@ -689,10 +790,29 @@ def closing_paren(command: str, start: int) -> int:
             return end + 1
     depth = 0
     cases = []
+    command_start = True
+    target = False
     pending = []
     index = start
     while index < len(command):
         char = command[index]
+        case = cases[-1] if cases and cases[-1][0] == depth else None
+        if index > start and char not in METACHARACTERS and command[index - 1] in METACHARACTERS:
+            if target:
+                target = False
+            elif case and case[1] == "head":
+                case[2] -= 1
+                if not case[2]:
+                    case[1] = "pattern"
+            elif case and case[1] == "pattern":
+                if word_at(command, index, "esac"):
+                    cases.pop()
+            elif command_start:
+                if word_at(command, index, "case"):
+                    cases.append([depth, "head", 2])
+                elif case and word_at(command, index, "esac"):
+                    cases.pop()
+                command_start = any(word_at(command, index, word) for word in COMMAND_LEADERS)
         if char == "\\":
             index += 2
             continue
@@ -707,34 +827,55 @@ def closing_paren(command: str, start: int) -> int:
             close = ansi_c_span(command, index)
             index = dollar_run(command, index) if close is None else close + 1
             continue
+        elif command.startswith("$[", index):
+            index = arithmetic_close(command, index + 1, "[]")
         elif char == "#" and index > start and command[index - 1] in WORD_START:
             end = command.find("\n", index)
             index = len(command) if end == -1 else end
             continue
-        elif char == "\n" and pending:
-            index = skip_heredoc_bodies(command, index + 1, pending)
-            pending = []
+        elif char == "\n":
+            command_start = True
+            if pending:
+                index = skip_heredoc_bodies(command, index + 1, pending)
+                pending = []
+                continue
+        elif command.startswith("<<<", index):
+            target = True
+            index += 3
             continue
         elif char == "<" and (heredoc := heredoc_at(command, index)):
             pending.append(heredoc[1:])
             index = heredoc[0]
             continue
-        elif keyword_at(command, index, "case"):
-            cases.append(depth)
-        elif keyword_at(command, index, "esac") and cases:
-            cases.pop()
+        elif char in "<>":
+            target = True
+        elif char in ";&|":
+            if case and case[1] == "body" and command.startswith((";;", ";&"), index):
+                case[1] = "pattern"
+            command_start = True
         elif char == "(":
-            depth += 1
-        elif char == ")" and not (cases and cases[-1] == depth):
-            depth -= 1
-            if depth == 0:
-                return index
+            arithmetic = arithmetic_close(command, index + 1) if command.startswith("((", index) else None
+            if arithmetic is not None and command.startswith(")", arithmetic + 1):
+                index = arithmetic + 1
+                command_start = False
+            elif not (case and case[1] == "pattern"):
+                depth += 1
+                command_start = True
+        elif char == ")":
+            if case and case[1] == "pattern":
+                case[1] = "body"
+                command_start = True
+            else:
+                depth -= 1
+                if depth == 0:
+                    return index
+                command_start = False
         index += 1
     return len(command)
 
 
-def arithmetic_close(command: str, start: int) -> int:
-    """The index of the `)` that closes the arithmetic `(` at `start`, or the end of `command`: parentheses count unless quoted, escaped or in a substitution."""
+def arithmetic_close(command: str, start: int, pair: str = "()") -> int:
+    """The index of the bracket that closes the arithmetic `(`, or `[` with `pair` `[]`, at `start`, or the end of `command`: brackets count unless quoted, escaped or in a substitution."""
     depth = 0
     index = start
     while index < len(command):
@@ -751,9 +892,9 @@ def arithmetic_close(command: str, start: int) -> int:
             index = escaped_close(command, index + 1, "`")
         elif command.startswith("$(", index):
             index = closing_paren(command, index + 1)
-        elif char == "(":
+        elif char == pair[0]:
             depth += 1
-        elif char == ")":
+        elif char == pair[1]:
             depth -= 1
             if depth == 0:
                 return index
@@ -761,10 +902,9 @@ def arithmetic_close(command: str, start: int) -> int:
     return len(command)
 
 
-def keyword_at(command: str, index: int, word: str) -> bool:
-    before = command[index - 1] if index else " "
-    after = command[index + len(word) : index + len(word) + 1] or " "
-    return command.startswith(word, index) and not (before.isalnum() or before == "_") and not (after.isalnum() or after == "_")
+def word_at(command: str, index: int, word: str) -> bool:
+    """True when the word at `index` is exactly `word`: a reserved word ends at a metacharacter, so `case.txt` and `case-x` are not `case`."""
+    return command.startswith(word, index) and command[index + len(word) : index + len(word) + 1] in METACHARACTERS
 
 
 def skip_heredoc_bodies(command: str, index: int, pending: list, bodies=None) -> int:

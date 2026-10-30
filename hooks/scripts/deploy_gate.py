@@ -6,7 +6,8 @@ authorised a release, either by exporting RELEASE_AUTHORIZED or by creating
 command and against each simple command in it, anchored at every word that
 could name a program, so `^git tag ` also catches `cd . && git tag v1` and
 `sudo git tag v1`. A call too long or too deeply nested to read is blocked
-rather than half read, as is one bash and zsh read differently.
+rather than half read, as is one bash and zsh read differently
+and one holding a double-quoted substitution that never closes.
 A script fed to an interpreter, such as `echo 'git tag v1' | bash`, is not
 read, nor is a word built from a variable, such as `git $t v1`.
 """
@@ -15,7 +16,7 @@ import os
 import re
 import sys
 
-from _common import BRACES, SHELLS, ShellsDiffer, Unreadable, block, closing_paren, git_options, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
+from _common import BRACES, SHELLS, ShellsDiffer, Unclosed, Unreadable, block, closing_paren, dollar_run, git_options, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
 
 MARKER_RELPATH = ".claude/.release-authorized"
 
@@ -163,12 +164,15 @@ def simple_commands(command: str) -> list:
 
 
 def substitutions(command: str, quotes: bool = True) -> list:
-    """The command inside each `$(...)` and backtick span the shell runs in `command`: outside quotes or inside double quotes, never inside single quotes or after a backslash.
+    """The command inside each `$(...)` and backtick span the shell runs in `command`, outside quotes and never after a backslash.
 
-    With `quotes` false, as in a heredoc body, quote characters are literal. A
-    backtick span ends at the first backtick not escaped, and its inner text is
-    read with `\\``, `\\$` and `\\\\` unescaped, as bash does, so a nested
-    backtick span is found when that text is read.
+    `command` is `shell_source`'s text, which has already read each
+    substitution inside double quotes into its spans and left only literal
+    text there. With `quotes` false, as in a heredoc body, quote characters
+    are literal. A run of `$` is read whole, so after `$$`, the PID, a `(` is
+    literal. A backtick span ends at the first backtick not escaped, and its
+    inner text is read with `\\``, `\\$` and `\\\\` unescaped, as bash does, so a
+    nested backtick span is found when that text is read.
     """
     found = []
     quote = ""
@@ -180,13 +184,15 @@ def substitutions(command: str, quotes: bool = True) -> list:
             continue
         if not quotes and char in "'\"":
             pass
-        elif quote == "'":
-            if char == "'":
+        elif quote:
+            if char == quote:
                 quote = ""
-        elif char == "'" and not quote:
-            quote = "'"
-        elif char == '"':
-            quote = "" if quote else '"'
+        elif char in "'\"":
+            quote = char
+        elif command.startswith("$$", index):
+            end = dollar_run(command, index)
+            index = end - 1 if (end - index) % 2 else end
+            continue
         elif command.startswith("$(", index):
             end = closing_paren(command, index + 1)
             found.append(command[index + 2 : end])
@@ -219,6 +225,10 @@ def main() -> int:
         if authorised(root):
             return 0
         return block(f"Blocked: {exc}, so deploy-gate cannot tell whether this Bash call runs a gated command. Rephrase it so both shells read it alike.")
+    except Unclosed as exc:
+        if authorised(root):
+            return 0
+        return block(f"Blocked: {exc}, so deploy-gate cannot tell where it ends or whether this Bash call runs a gated command. Close it or split the call.")
     except (Unreadable, RecursionError):
         if authorised(root):
             return 0

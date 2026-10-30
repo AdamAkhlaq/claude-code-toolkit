@@ -4,6 +4,9 @@ Follow-ups found while working a change or a review and not yet taken into one. 
 
 - `red-guard` does not read a substitution in double quotes, nested escaped backticks or a substitution in an expanding heredoc body, so `echo "$(git commit -am x)"` commits without the feedback check. `deploy-gate` catches all of these. Found in 0003 T7.
 - `_common.find_commit` recurses from every `eval` word, so a call with a chain of `eval` and no commit costs twice as much per word, and `red-guard` reaches its 600 s timeout and blocks. Found in 0003 T6.
+- The brace budget is per `shell_tokens` call, not per hook call, so a word expanding to about 1,000,000 characters takes 2.3 s in `deploy-gate`: under its 30 s timeout, worth bounding per hook call if it grows. Found in the fourth review of 0003.
+- A substitution inside double quotes that runs to the end of the call hides the rest of it from every reader; raising `Unreadable` there would make any future overrun of `closing_paren` or `parameter_close` fail closed. Found in the fifth review of 0003.
+- `_common.closing_paren`'s cache is never cleared and is keyed on whole command strings: fine in a one-shot hook process, unbounded if `_common` is ever imported and reused. Found in the fifth review of 0003.
 - `secret-guard` and `ticket-sync` have no timeout in `hooks/hooks.json` and no `"onFailure": "block"`, so a call they cannot finish reading in time runs, against `CLAUDE.md`'s rule. Found in the third review of 0003.
 - `agents/implementer.md:27` loops when a hook blocks a commit on a timeout or a fault rather than a red feedback command. Found in the review of 0002.
 - The `setup` skill's step 9 does not name `red-guard`. Found in the review of 0002.

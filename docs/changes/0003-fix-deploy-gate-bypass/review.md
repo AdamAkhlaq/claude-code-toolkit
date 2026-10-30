@@ -181,9 +181,9 @@ Three passes from `REVIEW.md` over the delta `c96a43e...74c8228`, which holds T9
 
 ### Important
 
-- [ ] hooks/scripts/\_common.py:722 `closing_paren` takes the word `case` anywhere as the start of a `case` statement (`keyword_at` only checks the characters either side), so `case.txt`, `$case` or `echo case` inside `"$(...)"` makes it skip the real `)` and swallow the commands after it: `echo "$(cat case.txt)" && git commit -am x` passes `red-guard`, `secret-guard` and `ticket-sync`, and `git log --grep "$(echo case)"; git tag v1; echo "$(echo esac)"` passes `deploy-gate`. Both shells run the command; `c96a43e` blocked all of them. Fix: count `case` and `esac` only at command position, and add the forms to the T10 proving test for both hooks. (security)
-- [ ] hooks/scripts/\_common.py:718 `closing_paren` reads a heredoc at any `<<` outside quotes, including inside a here-string `<<<` and a shift in `((...))` or `$((...))` after the start of the span, so it skips to a later line equal to the "delimiter": `echo "$(cat <<<EOF`, `)"; git tag v1; echo "x"`, `EOF` and `echo "$( ((1 <<EOF))`, `)" "a"; git tag v1 # "`, `EOF` pass `deploy-gate`, and the commit forms, with `echo "$( echo $((1 <<EOF)) x`, `)"; git commit -am x`, `EOF`, pass `red-guard`. Both shells run them; `c96a43e` blocked all of them. Fix: step over `<<<` as one unit and skip `((...))`, `$((...))` and `$[...]` with `arithmetic_close` before testing for a heredoc. (bugs)
-- [ ] hooks/scripts/\_common.py:588 `double_quoted` and `parameter_close` (line 623) test for `$(`, `${` and a backtick one character at a time, so in `"$$(..."` or `"$${..."` the second `$` opens a substitution that zsh reads as the PID followed by a literal `(` or `{`, and the reader runs past the real closing quote: `echo "$$(" ; git tag v1 ; echo ")"`, `echo "$${x" ; git tag v1 ; echo "}"` and `echo "${x:-$$(}" ; git tag v1 ; echo ")"` pass `deploy-gate`, and their commit forms `red-guard`. zsh runs them, bash 3.2 rejects them; `c96a43e` blocked all of them, and T9 decided that the hooks fail closed where the shells disagree. Fix: take a run of `$` whole with `dollar_run` and raise `ShellsDiffer` when an even run comes before `(` or `{`. (bugs)
+- [x] 0594020 hooks/scripts/\_common.py:722 `closing_paren` takes the word `case` anywhere as the start of a `case` statement (`keyword_at` only checks the characters either side), so `case.txt`, `$case` or `echo case` inside `"$(...)"` makes it skip the real `)` and swallow the commands after it: `echo "$(cat case.txt)" && git commit -am x` passes `red-guard`, `secret-guard` and `ticket-sync`, and `git log --grep "$(echo case)"; git tag v1; echo "$(echo esac)"` passes `deploy-gate`. Both shells run the command; `c96a43e` blocked all of them. Fix: count `case` and `esac` only at command position, and add the forms to the T10 proving test for both hooks. (security)
+- [x] 0594020 hooks/scripts/\_common.py:718 `closing_paren` reads a heredoc at any `<<` outside quotes, including inside a here-string `<<<` and a shift in `((...))` or `$((...))` after the start of the span, so it skips to a later line equal to the "delimiter": `echo "$(cat <<<EOF`, `)"; git tag v1; echo "x"`, `EOF` and `echo "$( ((1 <<EOF))`, `)" "a"; git tag v1 # "`, `EOF` pass `deploy-gate`, and the commit forms, with `echo "$( echo $((1 <<EOF)) x`, `)"; git commit -am x`, `EOF`, pass `red-guard`. Both shells run them; `c96a43e` blocked all of them. Fix: step over `<<<` as one unit and skip `((...))`, `$((...))` and `$[...]` with `arithmetic_close` before testing for a heredoc. (bugs)
+- [x] 0594020 hooks/scripts/\_common.py:588 `double_quoted` and `parameter_close` (line 623) test for `$(`, `${` and a backtick one character at a time, so in `"$$(..."` or `"$${..."` the second `$` opens a substitution that zsh reads as the PID followed by a literal `(` or `{`, and the reader runs past the real closing quote: `echo "$$(" ; git tag v1 ; echo ")"`, `echo "$${x" ; git tag v1 ; echo "}"` and `echo "${x:-$$(}" ; git tag v1 ; echo ")"` pass `deploy-gate`, and their commit forms `red-guard`. zsh runs them, bash 3.2 rejects them; `c96a43e` blocked all of them, and T9 decided that the hooks fail closed where the shells disagree. Fix: take a run of `$` whole with `dollar_run` and raise `ShellsDiffer` when an even run comes before `(` or `{`. (bugs)
 
 ### Nits
 
@@ -210,6 +210,45 @@ Taken by Adam Akhlaq on 2026-10-30 at the review gate:
 - The three Importants become ticket T11, appended with `/toolkit:tickets 0003`, worked test-first and passed by a fresh verifier as T9 and T10 were; they stay open until T11 is done.
 - The four open Nits are fixed in eb1a408, and the out-of-pass notes on an overrun failing closed and on `closing_paren`'s cache get lines in `docs/backlog.md`.
 - `closing_paren` misreads were raised in the second, third and this round, so `CLAUDE.md` gets a line: a reader function whose answer starts to decide what other readers skip is probed again, branch by branch, as a bypass.
+
+### Waivers
+
+<none yet>
+
+## Review 2026-10-30 of a7e72cc
+
+Three passes from `REVIEW.md` over the delta `74c8228...a7e72cc`, which holds the fifth round's doc commits, the T11 ticket and T11, each in its own context. Every Important below was re-run against the hooks at `a7e72cc`, at `74c8228` and at `c96a43e`, in `/bin/bash` 3.2 and `/bin/zsh` with a stub `git` that prints to stderr. The fifth round's boxes above are ticked with T11's fix commit. All five Importants are in the `case` tracking T11 added to `closing_paren`: each is a `case` form it does not model, where a pattern's `)` then ends the substitution early and the text after it reads as quoted. Four are regressions from T11 (`74c8228` blocked every tag form); the fifth came in with T10.
+
+### Important
+
+- [ ] hooks/scripts/\_common.py:815 Command position is bash's list of leaders, so a `case` that zsh runs at command position after `f()`, `function f {`, `repeat 1`, `coproc`, `for i (1)` or `foreach i (1)`, or after a backslash-newline (line 816 takes the `\` as a word), is not opened: `echo "$(f() case x in x) git tag v1;; esac; f)"`, `echo "$(repeat 1 case x in x) git tag v1;; esac)"` and `echo "$(echo;\`, `case x in x) git tag v1;; esac)"` pass `deploy-gate`, and `echo "$(f() case x in a) echo "'";; esac)"; git commit -am x; echo "'"` passes `red-guard`. zsh runs each; `74c8228` blocked them. Fix: in T12. (security, bugs)
+- [ ] hooks/scripts/\_common.py:861 In a pattern every `(` is skipped as the optional leading paren, but every `)` still ends the pattern, so a `$(...)` in a pattern, or a zsh glob group, moves the reader into the body early and the next `)` ends the span: `echo "$(case x in ($(echo a)) echo hi;; esac; git tag v1)"` passes `deploy-gate` and both shells run the tag, and `echo "$(case x in x(|y)) git tag v1;; esac)"` and `echo "$(case x in (x|(y))) git tag v1;; esac)"` pass while zsh runs the tag. `74c8228` blocked all of them. Fix: in T12. (bugs, security)
+- [ ] hooks/scripts/\_common.py:853 Only `;;` and `;&` return a body to its patterns, so after zsh's `;|` the next pattern's `)` ends the span: `echo "$(case x in x) echo a;| *) git tag v1;; esac)"` passes `deploy-gate` and zsh runs the tag; `74c8228` blocked it. Fix: in T12. (security)
+- [ ] hooks/scripts/\_common.py:850 The `<` or `>` of a process substitution `<(` or `>(` sets `target`, and the `(` does not clear it, so the first word inside is skipped as a redirect target and a `case` there is never opened: `echo "$(cat <(case x in a) echo hi;; esac) ; git tag v1 )"` passes `deploy-gate`; zsh runs the tag, bash 3.2 rejects the call, and T9 decided that the hooks fail closed where the shells disagree. `74c8228` blocked it. Fix: in T12. (bugs)
+- [ ] hooks/scripts/\_common.py:803 The `case x { ... }` form, which bash 3.2 and zsh both run, is read with `{` as the second head word, so the `}` never closes the `case` and the substitution's own `)` is taken as a pattern end: `echo "$(case x { x) echo a;; })"; git tag v1; echo ")"` passes `deploy-gate` and its `git commit` form passes `red-guard`, and both shells run the command. It came in with T10 (`74c8228` misses it too, `c96a43e` caught it). Fix: in T12. (security)
+
+### Nits
+
+- docs/changes/0003-fix-deploy-gate-bypass/review.md:184 The fifth round's three boxes were open after T11 closed them, the third round in a row this happened. Ticked in this record with `0594020`. (compliance)
+- docs/changes/0003-fix-deploy-gate-bypass/tickets/T10-substitution-in-double-quotes-is-its-own-context.md:60 The code spans after the double-backtick one still run into the words around them (``EOF`got past because`closing_paren`read``). Fix: a space on each side of those spans. (compliance)
+- README.md:76 The `deploy-gate` paragraph lists the "too long" and "bash and zsh read differently" blocks but not T11's block on a double-quoted substitution that never closes. Fix: add it beside the "read differently" sentence. (compliance)
+- CHANGELOG.md:12 The entry for the commit hooks' unreadable-call block does not say that a double-quoted substitution that never closes is one, though `red-guard`, `secret-guard` and `ticket-sync` block it with that reason. Fix: add it to the examples. (compliance)
+
+0 Nits dropped.
+
+### Out of pass
+
+- The frontmatter's `reviewed:` still names the first round's head, `d9f448e`; each later round names its head in its heading.
+- In T11's live check `red-guard` blocked the `$$(` and never-closing calls before `deploy-gate` ran, so `deploy-gate`'s own two new messages were shown only in the unit tests.
+- No pull request exists yet, so its statement of merge danger could not be checked.
+
+### Decisions
+
+Taken by Adam Akhlaq on 2026-10-30 at the review gate:
+
+- The five Importants become ticket T12, appended with `/toolkit:tickets 0003`, worked test-first and passed by a fresh verifier as T9 to T11 were; they stay open until T12 is done. Its grilling weighs failing closed on a `case` form the reader does not model against modelling each form.
+- The Nits are fixed in 71aff32, with the `red-guard` entry in `CHANGELOG.md`, which had the same gap and still said "a commit it cannot read".
+- `closing_paren` misreads were raised in the second, third, fifth and this round, and this round's came from zsh's own grammar, which the family checks did not cover: `CLAUDE.md`'s family-check line now names bash and zsh and each shell's own grammar. Stale boxes were raised in the fourth, fifth and this round: `CLAUDE.md` gets a line that a ticket closing review findings ticks their boxes when it merges.
 
 ### Waivers
 

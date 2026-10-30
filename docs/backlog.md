@@ -2,7 +2,7 @@
 
 Follow-ups found while working a change or a review and not yet taken into one. Each line names where it was found. A line leaves this file when a change takes it, in the commit that adds the change's intent or ticket.
 
-- `red-guard` does not read a substitution in double quotes, nested escaped backticks or a substitution in an expanding heredoc body, so `echo "$(git commit -am x)"` commits without the feedback check. `deploy-gate` catches all of these. Found in 0003 T7.
+- `red-guard`, `secret-guard` and `ticket-sync` do not read a substitution in double quotes, nested escaped backticks or a substitution in an expanding heredoc body, so `echo "$(git commit -am x)"` commits without the feedback check or the secret scan. `deploy-gate` catches all of these. Found in 0003 T7; kept out of 0003 at T12's gate, for its own change after 0.5.1.
 - `_common.find_commit` recurses from every `eval` word, so a call with a chain of `eval` and no commit costs twice as much per word, and `red-guard` reaches its 600 s timeout and blocks. Found in 0003 T6.
 - The brace budget is per `shell_tokens` call, not per hook call, so a word expanding to about 1,000,000 characters takes 2.3 s in `deploy-gate`: under its 30 s timeout, worth bounding per hook call if it grows. Found in the fourth review of 0003.
 - `_common.closing_paren`'s cache is never cleared and is keyed on whole command strings: fine in a one-shot hook process, unbounded if `_common` is ever imported and reused. Found in the fifth review of 0003.

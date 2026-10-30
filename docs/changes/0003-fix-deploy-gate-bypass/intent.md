@@ -63,3 +63,7 @@ The fourth review, of `c96a43e`, found five regressions from T7 and T8 and one o
 ## Amendment 2026-10-30: one more ticket
 
 The fifth review, of `74c8228`, found three regressions from T10, where `closing_paren` and `double_quoted` now decide where a double-quoted string ends and a misread hides the text after it, so T11 (a substitution inside double quotes ends where bash and zsh end it, or the call is blocked) was appended, taking the backlog line on an overrun failing closed: eleven tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.
+
+## Amendment 2026-10-30: a twelfth ticket
+
+The sixth review, of `a7e72cc`, found five `case` forms that T11's tracking in `closing_paren` does not model, four of them regressions from T11, and a `${...}` holding `)` was found while cutting the ticket, so T12 (a case or parameter form the reader does not model inside a substitution blocks the call) was appended: twelve tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.

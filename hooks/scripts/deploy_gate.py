@@ -6,8 +6,9 @@ authorised a release, either by exporting RELEASE_AUTHORIZED or by creating
 command and against each simple command in it, anchored at every word that
 could name a program, so `^git tag ` also catches `cd . && git tag v1` and
 `sudo git tag v1`. A call too long or too deeply nested to read is blocked
-rather than half read, as is one bash and zsh read differently
-and one holding a double-quoted substitution that never closes.
+rather than half read, as is one bash and zsh read differently, one holding
+a double-quoted substitution that never closes, and one holding a `case`
+form inside a substitution that the reader does not model.
 A script fed to an interpreter, such as `echo 'git tag v1' | bash`, is not
 read, nor is a word built from a variable, such as `git $t v1`.
 """
@@ -16,7 +17,7 @@ import os
 import re
 import sys
 
-from _common import BRACES, SHELLS, ShellsDiffer, Unclosed, Unreadable, block, closing_paren, dollar_run, git_options, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
+from _common import BRACES, SHELLS, ShellsDiffer, Unclosed, Unmodelled, Unreadable, block, closing_paren, dollar_run, git_options, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
 
 MARKER_RELPATH = ".claude/.release-authorized"
 
@@ -229,6 +230,10 @@ def main() -> int:
         if authorised(root):
             return 0
         return block(f"Blocked: {exc}, so deploy-gate cannot tell where it ends or whether this Bash call runs a gated command. Close it or split the call.")
+    except Unmodelled as exc:
+        if authorised(root):
+            return 0
+        return block(f"Blocked: deploy-gate does not read {exc}, so it cannot tell where the substitution ends or whether this Bash call runs a gated command. Rephrase it or split the call.")
     except (Unreadable, RecursionError):
         if authorised(root):
             return 0

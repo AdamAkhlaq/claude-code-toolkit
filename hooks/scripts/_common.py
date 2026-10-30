@@ -492,6 +492,44 @@ def heredoc_at(command: str, index: int):
 
 
 def shell_source(command: str, bodies=None, spans=None) -> str:
+    """`command` as `source_text` reads it, with each backslash-newline deleted first, as bash and zsh delete it before reading anything else.
+
+    They keep one only in literal text: inside single quotes, in a heredoc
+    body whose delimiter is quoted, and at the end of a `#` comment, which
+    still ends at its line. So a call holding one is read twice, joined and as
+    written, and when the two readings differ once their own backslash-newlines
+    are deleted, one of them sits where it changes where a quote, substitution,
+    heredoc or comment ends, and the call raises Unmodelled.
+    """
+    if "\\\n" not in command:
+        return source_text(command, bodies, spans)
+    joined_bodies, joined_spans = [], []
+    text = source_text(joined(command), joined_bodies, joined_spans)
+    written_bodies, written_spans = [], []
+    written = source_text(command, written_bodies, written_spans)
+    if (joined(written), list(map(joined, written_bodies)), list(map(joined, written_spans))) != (text, joined_bodies, joined_spans):
+        raise Unmodelled("a backslash-newline that changes where a quote, substitution, heredoc or comment ends")
+    if bodies is not None:
+        bodies.extend(joined_bodies)
+    if spans is not None:
+        spans.extend(joined_spans)
+    return text
+
+
+def comment_end(command: str, index: int, end: int) -> int:
+    """`end`, the newline that ends the `#` comment at `index`: bash and zsh end a comment there even after a backslash, but one of them reads a substitution's text joined first, so a comment ending in a backslash raises Unmodelled."""
+    comment = command[index:end]
+    if (len(comment) - len(comment.rstrip("\\"))) % 2:
+        raise Unmodelled("a `#` comment ending in a backslash, which bash and zsh end at different places inside a substitution")
+    return end
+
+
+def joined(text: str) -> str:
+    """`text` with each backslash-newline deleted, a backslash escaped by another kept."""
+    return re.sub(r"\\(\n|.)", lambda match: "" if match.group(1) == "\n" else match.group(0), text, flags=re.S)
+
+
+def source_text(command: str, bodies=None, spans=None) -> str:
     """`command` without what the shell does not run as commands: `#` comments, the body of each heredoc, and each backslash-newline, which the shell deletes.
 
     A `#` starts a comment only at the start of a word, outside quotes and
@@ -547,7 +585,7 @@ def shell_source(command: str, bodies=None, spans=None) -> str:
             quote = char
         elif char == "#" and starts_word and not braces:
             end = command.find("\n", index)
-            index = len(command) if end == -1 else end
+            index = len(command) if end == -1 else comment_end(command, index, end)
             continue
         elif command.startswith("${", index):
             braces += 1
@@ -867,7 +905,7 @@ def closing_paren(command: str, start: int) -> int:
             index = end
         elif char == "#" and index > start and command[index - 1] in WORD_START:
             end = command.find("\n", index)
-            index = len(command) if end == -1 else end
+            index = len(command) if end == -1 else comment_end(command, index, end)
             continue
         elif char == "\n":
             command_start = True

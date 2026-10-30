@@ -97,3 +97,36 @@ Checks:
 7. tests intact: ok (no assertion deleted, nothing skipped; the one changed expected message is the cost the ticket accepts, still exit 2, reason recorded)
 
 Reopen reason: `deploy-gate` passes a `case` or `${` that a backslash-newline splits inside a double-quoted substitution, which zsh joins and runs (`echo "$(ca\`+newline+`se x in x) git tag v1;; esac)"`, `echo "$(echo $\`+newline+`{x/)/y}; git tag v1)"`); join line continuations in `closing_paren`'s reading, or block them there, add these to the proving test first, and probe the backslash-newline family at every word and operator the reader checks (`case`, `in`, `esac`, `;;`, `;&`, `;|`, `<(`, `>(`, `$`-runs before `{`).
+
+### Evidence 2026-10-30 22:21, after the reopen
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+......................................................................................
+----------------------------------------------------------------------
+Ran 86 tests in 20.706s
+
+OK
+```
+
+The verifier's four forms reproduced as written, and the backslash-newline family, checked in `/bin/bash` 3.2 and `/bin/zsh` with a stub `git` across every token the readers test, held three more that get past `deploy-gate`: `echo "$\` / `(git tag v1)"`, which bash runs and which came in with T11 (`74c8228` blocked it), `echo "${x:-$\` / `(git tag v1)}"`, which bash runs and which came in with T10, and `cat <<EOF` / `$\` / `(git tag v1)` / `EOF`, which both shells run and which no earlier head caught. Each went into the proving test before the fix, with a red-guard case for the split `case` (`b40b6f6`; the reopen verdict and the resume are `3c555d8` and `ef52f66`).
+
+The cause is one, not one per token: bash and zsh delete a backslash-newline before reading anything, and only `shell_source`'s top level did. So the fix is in `shell_source`, now a wrapper over the old reader, `source_text`. A call holding a backslash-newline is read twice, joined (each unescaped backslash-newline deleted, by `joined`) and as written. When the two readings agree once the written one's own backslash-newlines are deleted, in its text, its heredoc bodies and its spans, the joined reading is returned, so every later reader sees the call as the shells do. When they differ, a backslash-newline sits where deleting it changes where a quote, substitution, heredoc or comment ends, and the call raises `Unmodelled`. Checked in both shells first: a `#` comment ends at its line even after a backslash, a quoted heredoc keeps `x\` and ends at the delimiter on the next line, and an unquoted heredoc joins `x\` and `EOF` into `xEOF` and does not end. The joined reading is wrong for the first two and the written one for the third, and each makes the two disagree.
+
+One fault in the first draft, found by the boundary probe and added to the proving test after `b40b6f6`: in `echo "$(echo a # note \` / `git tag v1` / `)"` zsh ends the comment at its line and runs the tag, but the written span with its backslash-newline deleted equals the joined span, so the readings agreed and the joined one hid the tag. `source_text` and `closing_paren` now end a comment through `comment_end`, which raises `Unmodelled` on a comment ending in an odd run of backslashes; only the written reading can see one.
+
+Boundaries, probed the same way (32 cases): a backslash-newline inside single quotes, `$'...'` and a quoted heredoc body; a quoted heredoc writing a script with continuations; a quoted heredoc body line ending in `\` before its delimiter, with a split `"$\` after it; `#` comments ending in one and two backslashes, at the top level, inside a substitution and inside an expanding heredoc body's substitution; an escaped backslash before a newline at the top level and in a substitution; split `git tag` inside `"$(...)"`, backticks, an expanding heredoc, `${...}`, `eval` and `bash -c` with each quote; and the forms that must stay silent, `x="$(curl -s \` / `-H a \` / `b)"`, `echo "line one \` / `line two"` and `printf '%s' a \` / `b`. All are blocked or silent as bash and zsh run them. Every probe set (`cases` 1 to 18) shows no `deploy-gate` miss and no block of a call either shell runs without a tag. Timing, all under 2.2 s: 60,000 continuations at the top level (2.1 s through `is_git_commit`) and inside a substitution, a continuation in each of 200 nested `"$(echo \`, and the whole earlier set unchanged. `claude plugin validate .` passes with the same warnings.
+
+Live check, 2026-10-30, in this session (`x="$(git log \` / `--oneline)"; echo "$x" "line one \` / `line two"` ran and printed `fbdecff init line one line two`) and in a headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` session in the throwaway repo with `gatedCommands` alone, one Bash call per command. No tag was created.
+
+| Command                                                               | Result                                                                                                                                                  |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `echo "$(ca\` / `se x in x) git tag v1;; esac)"`                      | blocked: "Blocked: deploy-gate does not read a backslash-newline that changes where a quote, substitution, heredoc or comment ends ..."                 |
+| `echo "$\` / `(git tag v2)"`                                          | blocked: the same message                                                                                                                               |
+| `cat <<EOF` / `$\` / `(git tag v3)` / `EOF`                           | blocked: "Blocked: 'cat <<EOF ... matches gated command pattern '^git tag '"                                                                            |
+| `echo "$(echo a # note \` / `git tag v4` / `)"`                       | blocked: "Blocked: deploy-gate does not read a `#` comment ending in a backslash, which bash and zsh end at different places inside a substitution ..." |
+| `x="$(git log \` / `--oneline)"; echo "$x" "line one \` / `line two"` | ran: `43774ea init line one line two`                                                                                                                   |
+
+`CHANGELOG.md` and the README say a backslash-newline is read as the shells read it, and a call where deleting one changes where something ends is blocked.

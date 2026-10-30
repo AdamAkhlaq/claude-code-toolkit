@@ -473,6 +473,7 @@ class DeployGateTests(HookCase):
             "cat <<EOF\n$\\\n(git tag v1)\nEOF",
             "cat <<'EOF'\nx\\\nEOF\necho \"$\\\n(git tag v1)\"\nEOF",
             "cat <<EOF\nx\\\nEOF\necho \"$(git tag v1)\"\nEOF",
+            'echo "$(echo a # note \\\ngit tag v1\n)"',
         ):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)

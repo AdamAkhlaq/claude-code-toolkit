@@ -11,7 +11,7 @@ files:
     README.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_case_or_parameter_form_the_reader_does_not_model_blocks_the_call: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `echo "$(case x in x) echo a;| *) git tag v1;; esac)"` and `echo "$(cat <(case x in a) echo hi;; esac) ; git tag v1 )"`; exits 2 naming a `case` it cannot read on `echo "$(f() case x in x) git tag v1;; esac; f)"`, `echo "$(repeat 1 case x in x) git tag v1;; esac)"`, `echo "$(echo;\` / `case x in x) git tag v1;; esac)"` (lines joined by a newline), `echo "$(case x in ($(echo a)) echo hi;; esac; git tag v1)"`, `echo "$(case x in x(|y)) git tag v1;; esac)"` and `echo "$(case x { x) echo a;; })"; git tag v1; echo ")"`; exits 2 saying bash and zsh read it differently on `echo "$(echo ${x/)/y}; git tag v1)"`; and exits 0 silently on `echo "$(case x in a) echo hi;; esac)"`, `echo "$(case x in (a) echo hi;; esac)"`, `echo "$(cat <(echo a))"` and `echo "$(echo ${x:-a})"`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `echo "$(f() case x in a) echo "''";; esac)"; git commit -am x; echo "''"` and `echo "$(case x { x) echo a;; })"; git commit -am x; echo ")"`'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T12
 ---
@@ -130,3 +130,16 @@ Live check, 2026-10-30, in this session (`x="$(git log \` / `--oneline)"; echo "
 | `x="$(git log \` / `--oneline)"; echo "$x" "line one \` / `line two"` | ran: `43774ea init line one line two`                                                                                                                   |
 
 `CHANGELOG.md` and the README say a backslash-newline is read as the shells read it, and a call where deleting one changes where something ends is blocked.
+
+### Verifier 2026-10-30 22:25
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok (all frontmatter fields present, `status: in-progress`; Evidence quotes the feedback command run after the reopen; the change has no `plan.md`, so the seam is the one the ticket names, the hook scripts as subprocesses)
+2. proving test present and meaningful: ok. Both test methods are added or extended on this branch and drive `deploy_gate.py` and `red_guard.py` as subprocesses. Run against the hooks of the integration branch and of the reopen commit `3c555d8`, the HEAD test file fails in both methods (at `3c555d8`, first on `echo "$(ca\`+newline+`se x in x) git tag v1;; esac)"` and on the split-`case` red-guard case). The previous reopen reason is fixed: with a stub `git` in `/bin/bash` 3.2 and `/bin/zsh`, 55 backslash-newline probes (the four forms from the reopen; splits at `in`, `esac`, `;;`, `;&`, `;|`, `<(`, `>(`, `$$` and `$`-runs before `{`; `"$\`+newline+`(`, `${x:-$\`+newline+`(`, an expanding heredoc; comments ending in one or two backslashes; single, ANSI-C and double quotes with `\'` or `\\` before the newline; backticks, `eval`, `bash -c`, nested `"$(...)"`, `$((...))`) show no call where either shell runs the tag and `deploy_gate.py` exits 0. The common continuations (`x="$(git log \`+newline+`--oneline)"`, `"line one \`+newline+`line two"`, `printf '%s' a \`+newline+`b`, a quoted heredoc writing a script with continuations, `git commit -m x \`+newline+`--dry-run`) stay silent. The only over-blocks seen are forms both shells reject or that run no tag (`;\`+newline+`|`, `es\`+newline+`ac`), which the fail-closed rule accepts.
+3. proving test run: exit 0, `Ran 2 tests in 5.064s OK` (`DeployGateTests.test_a_case_or_parameter_form_the_reader_does_not_model_blocks_the_call` and `RedGuardTests.test_reworded_commits_are_recognised`, run alone)
+4. feedback command: exit 0, `Ran 86 tests in 20.297s OK` (`python3 -m unittest discover -s tests`)
+5. acceptance: 4 of 4 checked, none failed. The proving test passes (check 3). Every other test passes, and the only removed test lines are T11's two `"$(echo case)"` assertions, moved to their own loop that asserts exit 2 and "does not read a `case`" (test line 377), as the Context allows and the Evidence explains. The T6, T7, T10 and T11 timing cases pass under their limits in the feedback run. `CHANGELOG.md`'s `[Unreleased]` `deploy-gate` entry and the README's `deploy-gate` paragraph both say that a `case` form the gate does not read inside a substitution is blocked, and both now also describe the backslash-newline rule.
+6. scope: ok (CHANGELOG.md, README.md, hooks/scripts/_common.py, hooks/scripts/deploy_gate.py, tests/test_hooks.py and the ticket)
+7. tests intact: ok (no assertion deleted, no skip or expected-failure marker; the one changed expected message is the cost the ticket accepts, still exit 2, with its reason recorded)

@@ -339,6 +339,14 @@ class DeployGateTests(HookCase):
             """echo "$( (echo "'") )"; git tag v1; echo "'\"""",
             """echo "$(case x in x) echo "'";; esac)"; git tag v1; echo "'\"""",
             """echo "$(echo "'" # )\n)"; git tag v1; echo "'\"""",
+            """echo "`echo '"'`"; git tag v1; echo '"'""",
+            """echo "${x:-$(echo "'")}"; git tag v1; echo "'\"""",
+            """echo "${x:-`echo "'"`}"; git tag v1; echo "'\"""",
+            """echo "${x:-${y:-"'"}}"; git tag v1; echo "'\"""",
+            """echo "`echo \\`echo "'"\\``"; git tag v1; echo "'\"""",
+            """echo "a\\\nb$(echo "'")"; git tag v1; echo "'\"""",
+            """echo "$(echo "'" # "\n)"; git tag v1; echo "'\"""",
+            """echo "$(cat <<'EOF'\n"\nEOF\n)"; git tag v1; echo '"'""",
         ):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
@@ -687,6 +695,10 @@ class RedGuardTests(HookCase):
             "echo {W..a..5}'x'; git commit -am x; echo 'y'",
             "cat <<$'EOF'\nEOF\ngit commit -am x\n$EOF",
             """x="$(printf "%s" "a'b")"; git commit -am x; y="$(printf "%s" "c'd")\"""",
+            """echo "`echo '"'`"; git commit -am x; echo '"'""",
+            """echo "${x:-"'"}"; git commit -am x; echo "'\"""",
+            """echo "$(echo ")" "'")"; git commit -am x; echo "'\"""",
+            """echo "$(cat <<'EOF'\n"\nEOF\n)"; git commit -am x; echo '"'""",
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)

@@ -11,7 +11,9 @@ files:
     README.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_case_in_a_substitution_blocks_and_a_quoted_backslash_newline_is_kept: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `bash -c ''echo a # x \` / `git tag v1''`, `bash -c $''echo a # x \` / `git tag v1''` and `eval ''cat <<"E"` / `x\` / `E` / `git tag v1` / `E''` (lines joined by a newline); exits 2 naming a `case` on `echo "$(case x in (x|esac) git tag v1;; esac)"`, `echo "$(case x in x|esac) git tag v1;; esac)"`, `echo "$(<<EOF case x in a) "; git tag v1; echo " ;; esac)"`, `echo "$([[ a || case == in ]] && echo a) "; git tag v1; echo " ;; esac)"` and `echo "$(case x in a) echo hi;; esac)"`; and exits 0 silently on `echo a # trailing \` / `ls`, `bash -c ''echo a \` / `&& ls''`, `sed ''/x/a\` / `y'' f`, `echo "$(cat case.txt)"` and `echo "$(echo ${x:-"\")"})"`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `bash -c ''echo a # x \` / `git commit -am x''` and `eval ''cat <<"E"` / `x\` / `E` / `git commit -am x` / `E''`'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T13
 ---
 
 ## Context

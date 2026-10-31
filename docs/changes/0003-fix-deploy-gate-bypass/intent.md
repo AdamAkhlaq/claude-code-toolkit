@@ -67,3 +67,7 @@ The fifth review, of `74c8228`, found three regressions from T10, where `closing
 ## Amendment 2026-10-30: a twelfth ticket
 
 The sixth review, of `a7e72cc`, found five `case` forms that T11's tracking in `closing_paren` does not model, four of them regressions from T11, and a `${...}` holding `)` was found while cutting the ticket, so T12 (a case or parameter form the reader does not model inside a substitution blocks the call) was appended: twelve tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.
+
+## Amendment 2026-10-31: a thirteenth ticket
+
+The seventh review, of `d0fb265`, found a regression from T12, where a backslash-newline inside single quotes was deleted before a `bash -c` or `eval` script was read, and three more `case` forms that the tracking in `closing_paren` opened or closed where the shells do not. T13 was appended to fix them. Under T13, any `case` inside a substitution blocks the call and the tracking is deleted, and a backslash-newline is deleted only where the shells delete it. The change now has thirteen tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.

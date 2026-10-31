@@ -12,7 +12,7 @@ files:
     docs/backlog.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_a_case_in_a_substitution_blocks_and_a_quoted_backslash_newline_is_kept: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `bash -c ''echo a # x \` / `git tag v1''`, `bash -c $''echo a # x \` / `git tag v1''` and `eval ''cat <<"E"` / `x\` / `E` / `git tag v1` / `E''` (lines joined by a newline); exits 2 naming a `case` on `echo "$(case x in (x|esac) git tag v1;; esac)"`, `echo "$(case x in x|esac) git tag v1;; esac)"`, `echo "$(<<EOF case x in a) "; git tag v1; echo " ;; esac)"`, `echo "$([[ a || case == in ]] && echo a) "; git tag v1; echo " ;; esac)"` and `echo "$(case x in a) echo hi;; esac)"`; and exits 0 silently on `echo a # trailing \` / `ls`, `bash -c ''echo a \` / `&& ls''`, `sed ''/x/a\` / `y'' f`, `echo "$(cat case.txt)"` and `echo "$(echo ${x:-"\")"})"`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `bash -c ''echo a # x \` / `git commit -am x''` and `eval ''cat <<"E"` / `x\` / `E` / `git commit -am x` / `E''`'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T13
 ---
@@ -176,3 +176,29 @@ The second ran in another throwaway repo with `"feedbackCommand": "echo boom-red
 | `sed -n '1a\` / `added' app.py`               | ran: `added`                                                                                     |
 
 No tag was created and nothing was committed in either repo.
+
+### Verifier 2026-10-31 14:35
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok. `id`, `title`, `blocked_by`, `files`, `proves`, `status: in-progress`, `executed_by` and `branch` are present, and the Evidence quotes a feedback command run.
+2. proving test present and meaningful: ok. `DeployGateTests.test_a_case_in_a_substitution_blocks_and_a_quoted_backslash_newline_is_kept` is new on this branch (1afe0e8), runs `deploy_gate.py` as a subprocess, and covers every form `proves` names. The `RedGuardTests.test_reworded_commits_are_recognised` additions sit in the loop that asserts the feedback command ran (`boom`). I ran both tests against the integration branch's hooks with this branch's `tests/test_hooks.py`, and both fail there: `AssertionError: 0 != 2 : bash -c 'echo a # x \`.
+3. proving test run: exit 0, `Ran 2 tests in 4.560s OK` (both tests targeted with `python3 -m unittest -v`).
+4. feedback command: exit 0, `Ran 87 tests in 23.799s OK` (`python3 -m unittest discover -s tests`).
+5. acceptance: 6 of 6 checked, none failed.
+   - Proving test passes: see check 3.
+   - Other tests pass unchanged, apart from the listed changes: the full suite passes. The test diff changes only the assertions that Context names, including the three the executor amended in. Each one still exits 2 and now names the `case`.
+   - Timing: all 11 `assertLess(time.monotonic() ...)` cases pass within the green suite.
+   - `closing_paren` holds no `case` state: confirmed in the diff. `cases`, the phases, `COMMAND_LEADERS`, `command_start` and `target` are gone, and only a `word_at(..., "case")` raise is left. The returned reading never applies `joined` inside quotes: `shell_source("echo 'a\\\nb'")` and `shell_source("echo $'a\\\nb'")` keep the backslash-newline. It is joined only inside a backtick span, and I confirmed in `/bin/bash` and `/bin/zsh` that both shells join it there (`ab`). The joined reading is only used for the agreement check.
+   - CHANGELOG and README: the `deploy-gate` entry and README paragraph describe the `case` block and where a backslash-newline is deleted and where it is kept. The `red-guard` and `secret-guard`/`ticket-sync` entries name both `Unmodelled` reasons.
+   - Message and docstrings: the `Unmodelled` message no longer mentions a substitution. The `Unmodelled` docstring names all three reasons raised (`_common.py:518`, `:634`, `:902`, `:931`). The `deploy_gate.py` docstring names the `case` and the backslash-newline reasons. It covers the comment ending in a backslash inside a substitution only through "one bash and zsh read differently", which is accurate but does not name it.
+6. scope: ok. Every changed file is in `files` or is the ticket itself.
+7. tests intact: ok. Every removed assertion line reappears in another assertion that still expects exit 2, and the reason for each is recorded in Context. No skip or expected-failure markers were added, and no timing limit was loosened.
+
+Reproduced independently:
+
+- In both shells, a top-level comment ending in a backslash ends at its line, and a `bash -c` single-quoted script keeps the continuation.
+- In bash 3.2 and zsh, `echo "$(echo ${x:-"\")"}; git tag v1)"` runs the tag.
+- With `eval "echo a # x \`, newline, `git tag v1"`, neither shell runs the tag, and the gate is silent on it.
+- The gate blocks `echo "$(echo case)"` and `x="$(case $1 in a) ...)"`, naming the `case`. It is silent on `"$(echo 'case')"`, `"$(echo "case")"` and `"$(cat case.txt)"`.

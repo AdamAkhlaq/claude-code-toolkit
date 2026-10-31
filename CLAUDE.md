@@ -28,6 +28,7 @@ This repo is the `toolkit` Claude Code plugin, served from its own marketplace `
 - When a skill, hook or agent is added, renamed or removed: update the README's component tables, the spec of the change that introduced it, and the "Enforced by" column in `PHILOSOPHY.md`.
 - When a review finds a shell form a hook's reader misses, check its whole family in bash and zsh with a stub program (quoting, expansion, heredoc delimiters, nested substitutions, comments, and each shell's own grammar, such as zsh's `repeat`, `coproc`, `foreach`, `function f {`, `case x {`, `;|` and glob groups) before fixing, not only the reported case, and probe the new code's own boundaries (each new branch's trigger characters, ranges and escapes) against bash before handing it on.
 - When a reader function gains a caller whose answer decides what other readers skip, probe every branch of it again as a bypass: a misread that used to make a hook read more now hides text.
+- A reader step that rewrites or matches the text (joining lines, a keyword, an operator) applies only where the shell applies it: probe each one inside single quotes, `$'...'`, double quotes, heredoc bodies, comments, `[[ ]]`, arithmetic and `case` patterns before handing it on.
 - When a ticket that closes review findings merges, tick their boxes in `review.md` with its fix commit in the same run.
 - A follow-up found while working a ticket or a review gets a home in the same change: a ticket in the graph or a line in `docs/backlog.md`, never only a mention in Evidence.
 

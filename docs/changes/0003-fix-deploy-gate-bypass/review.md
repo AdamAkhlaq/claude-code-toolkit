@@ -1,7 +1,7 @@
 ---
 id: "0003"
 slug: "fix-deploy-gate-bypass"
-reviewed: d9f448e6a7201f73a8b5c346933d338a08d74f81
+reviewed: d0fb265a237dcea5a8348457c219c8d0fe83adc6
 created: "2026-10-24"
 ---
 
@@ -249,6 +249,44 @@ Taken by Adam Akhlaq on 2026-10-30 at the review gate:
 - The five Importants become ticket T12, appended with `/toolkit:tickets 0003`, worked test-first and passed by a fresh verifier as T9 to T11 were; they stay open until T12 is done. Its grilling weighs failing closed on a `case` form the reader does not model against modelling each form.
 - The Nits are fixed in 71aff32, with the `red-guard` entry in `CHANGELOG.md`, which had the same gap and still said "a commit it cannot read".
 - `closing_paren` misreads were raised in the second, third, fifth and this round, and this round's came from zsh's own grammar, which the family checks did not cover: `CLAUDE.md`'s family-check line now names bash and zsh and each shell's own grammar. Stale boxes were raised in the fourth, fifth and this round: `CLAUDE.md` gets a line that a ticket closing review findings ticks their boxes when it merges.
+
+### Waivers
+
+<none yet>
+
+## Review 2026-10-31 of d0fb265
+
+Three passes from `REVIEW.md` over the delta `a7e72cc...d0fb265`, which holds the sixth round's doc commits, the T12 ticket and T12, each in its own context. Every Important below was re-run against the hooks at `d0fb265` and at `a7e72cc`, in `/bin/bash` 3.2 and `/bin/zsh` with a stub `git` that prints to stderr. The sixth round's boxes above were ticked with T12's fix commit in `d0fb265`. One Important is a regression from T12's backslash-newline reading, which joins text inside single quotes that both shells keep. The other three are in the `case` tracking: forms T12 meant to model, where the reader opens or closes a `case` that the shells do not, and the next `)` then ends the substitution early. `a7e72cc` misses those three too. The frontmatter's `reviewed:` now names this round's head.
+
+### Important
+
+- [ ] hooks/scripts/\_common.py:507 `shell_source` returns the reading of `joined(command)`, and `joined` deletes a backslash-newline inside `'...'` and `$'...'` as well, where bash and zsh keep it. Line 510 runs `joined` over the written reading too, so the comparison never sees the difference. The script handed to `eval`, `bash -c` or `zsh -c` therefore loses its backslash-newline before the inner reader sees its `#` comment or quoted heredoc. `bash -c 'echo a # x \`, newline, `git tag v1'`, the same with `$'...'`, and `eval 'cat <<"E"`, `x\`, `E`, `git tag v1`, `E'` pass `deploy-gate`, and both shells run the tag. `is_git_commit` turns False on the `git commit -am x` forms, so `red-guard`, `secret-guard` and `ticket-sync` miss them too. `a7e72cc` blocked all of them. Fix: in a ticket. Either join only outside single-quoted and ANSI-C spans, or return the written reading when the two agree. (security, bugs)
+- [ ] hooks/scripts/\_common.py:869 In pattern position any whole word `esac` closes the `case`, including one after a pattern's `(` or `|`, where it is only a pattern word. `echo "$(case x in (x|esac) echo "'";; esac)"; git tag v1; echo "'"`, `echo "$(case x in (x|esac) git tag v1;; esac)"` and `echo "$(case esac in (esac) git tag v1;; esac)"` pass `deploy-gate`, and both shells run the tag. With `echo "$(case x in x|esac) git tag v1;; esac)"`, zsh runs it. `a7e72cc` misses these too. Fix: in a ticket. Close on `esac` only before a pattern has started. (security)
+- [ ] hooks/scripts/\_common.py:921 After a heredoc operator and its delimiter, `command_start` stays True, so a `case` after it opens a `case`. `echo "$(<<EOF case x in a) "; git tag v1; echo " ;; esac)"` passes `deploy-gate`, and bash runs the tag because it reads `case` there as a command name. `a7e72cc` misses it too. Fix: in a ticket. End the command start at the delimiter, as the redirect-target branch at line 856 does. (bugs)
+- [ ] hooks/scripts/\_common.py:926 Inside `[[ ... ]]`, `&&` and `||` set `command_start`, so a `case` operand opens a `case`. `echo "$([[ a || case == in ]] && echo a) "; git tag v1; echo " ;; esac)"` and its `&&` form pass `deploy-gate`, and both shells run the tag. `a7e72cc` misses them too. Fix: in a ticket. Track `[[` to `]]`, or raise `Unmodelled` on a `case` inside it. (bugs)
+
+### Nits
+
+- CHANGELOG.md:10 The `red-guard` entry, and the `secret-guard`/`ticket-sync` entry at line 12, list what makes a call unreadable but not T12's `Unmodelled` reasons, which `read_error` passes to all three commit hooks. In a project with a `feedbackCommand`, `red-guard` now blocks a call that does not commit, such as `echo "$(echo case)"`, and the CHANGELOG states that cost only for `deploy-gate`. Fix: add "a `case` form inside a substitution it does not read, or a backslash-newline that changes where a span ends" to both entries. (compliance)
+- hooks/scripts/\_common.py:519 `comment_end` also runs on a top-level comment, so `echo a # trailing \`, newline, `ls` is blocked with a message saying "inside a substitution". Neither shell runs a tag there, and `a7e72cc` let it through. It also blocks any commit call carrying such a comment in the three commit hooks. Fix: raise only where the joined and written readings differ, or reword the message and record the over-block as an accepted cost. (bugs, security)
+- hooks/scripts/deploy_gate.py:236 The `Unmodelled` message always says the gate "cannot tell where the substitution ends", though a backslash-newline in a quoted heredoc or at the end of a comment raises it with no substitution involved. Fix: "cannot tell where the call's text ends". (compliance)
+- hooks/scripts/\_common.py:994 `parentheses_balance` skips a quote with a plain `find`, ignoring escapes and nested quotes, so `echo "$(echo ${x:-"\")"}; git tag v1)"` is blocked as read differently by bash and zsh, which read it the same way. It still blocks, so this opens no bypass. Fix: skip a double-quoted span with `double_quoted`. (bugs)
+- hooks/scripts/\_common.py:953 After the `)` of `f()`, `command_start` is False, so the POSIX function form `echo "$(f() { case x in a) echo hi;; esac; }; f)"` is blocked, a cost not listed in T12. Fix: treat `{` after `name()` as a command leader, or list the cost. (bugs)
+
+3 Nits dropped: the `deploy_gate.py` docstring and the `Unmodelled` docstring lag the backslash-newline block, and T12's Context line 26 still says a `case` head word raises.
+
+### Out of pass
+
+- T12's `proves` was not extended with the backslash-newline forms added after its reopen; the test holds them.
+- No pull request exists yet, so its statement of merge danger could not be checked.
+
+### Decisions
+
+Taken by Adam Akhlaq on 2026-10-31 at the review gate:
+
+- The four Importants become ticket T13, appended with `/toolkit:tickets 0003`, worked test-first and passed by a fresh verifier as T9 to T12 were; they stay open until T13 is done. Its grilling weighs blocking every `case` inside a double-quoted substitution, which ends the class, against modelling more forms.
+- The five Nits fold into T13, since four of them are in the code its fix touches.
+- A reader step matching or rewriting text where the shell does not was raised in the fourth (`$'` inside `$$'`), fifth (`<<` inside a here-string or arithmetic, `case` anywhere) and this round: `CLAUDE.md` gets a line that each such step is probed in every quoting and grammar context before it is handed on.
 
 ### Waivers
 

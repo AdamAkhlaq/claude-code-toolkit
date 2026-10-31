@@ -71,3 +71,7 @@ The sixth review, of `a7e72cc`, found five `case` forms that T11's tracking in `
 ## Amendment 2026-10-31: a thirteenth ticket
 
 The seventh review, of `d0fb265`, found a regression from T12, where a backslash-newline inside single quotes was deleted before a `bash -c` or `eval` script was read, and three more `case` forms that the tracking in `closing_paren` opened or closed where the shells do not. T13 was appended to fix them. Under T13, any `case` inside a substitution blocks the call and the tracking is deleted, and a backslash-newline is deleted only where the shells delete it. The change now has thirteen tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.
+
+## Amendment 2026-10-31: a fourteenth ticket
+
+The eighth review, of `28f3cbb`, found six Importants. Two are regressions from T13, where an escaped `\\` before a newline inside a backtick span was taken for a continuation. Three were already open: a `#` comment inside backticks that swallows the closing backtick, a `case` straight after `{`, and `##a` inside arithmetic read as a comment. The sixth is a docstring line T13 left out. A seventh bypass, zsh's `{git tag v1}`, was found while cutting the ticket. T14 was appended to fix them all. Under T14, a backtick span is found by its closing backtick and then read as a script, a zsh brace group's `{` and `}` are split off the words they touch, and no comment opens inside arithmetic. The change now has fourteen tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.

@@ -264,7 +264,7 @@ class Unclosed(Unreadable):
 
 
 class Unmodelled(Unreadable):
-    """A call holding a form the reader does not model where it decides where a substitution ends, such as a `case` where it cannot tell a command starts: reading it one way could hide the text after it."""
+    """A call holding a form the reader does not model, where reading it one way could hide the text after it: a `case` inside a substitution, a `#` comment ending in a backslash inside one, or a backslash-newline that changes where a quote, substitution, heredoc or comment ends."""
 
 
 def read_error(exc: Exception) -> str:
@@ -492,44 +492,75 @@ def heredoc_at(command: str, index: int):
 
 
 def shell_source(command: str, bodies=None, spans=None) -> str:
-    """`command` as `source_text` reads it, with each backslash-newline deleted first, as bash and zsh delete it before reading anything else.
+    """`command` as `source_text` reads it, with each backslash-newline read as bash and zsh read it.
 
-    They keep one only in literal text: inside single quotes, in a heredoc
-    body whose delimiter is quoted, and at the end of a `#` comment, which
-    still ends at its line. So a call holding one is read twice, joined and as
-    written, and when the two readings differ once their own backslash-newlines
-    are deleted, one of them sits where it changes where a quote, substitution,
-    heredoc or comment ends, and the call raises Unmodelled.
+    They delete one before reading anything else, except in literal text:
+    inside single quotes or `$'...'`, where it stays for a `bash -c` or `eval`
+    script to read in turn, in a heredoc body whose delimiter is quoted, and
+    at the end of a `#` comment, which still ends at its line. A token split
+    by one is only whole once it is deleted, so a call holding one is read
+    twice: as written, which finds the literal ones in comments and heredoc
+    bodies, and with every other one deleted. When the two readings differ
+    once their own backslash-newlines are deleted, one of them sits where it
+    changes where a quote, substitution, heredoc or comment ends, and the call
+    raises Unmodelled. Otherwise the written reading is returned, which keeps
+    the ones in quotes, with each heredoc body that expands joined, as the
+    shells join it.
     """
     if "\\\n" not in command:
         return source_text(command, bodies, spans)
-    joined_bodies, joined_spans = [], []
-    text = source_text(joined(command), joined_bodies, joined_spans)
+    literal = []
     written_bodies, written_spans = [], []
-    written = source_text(command, written_bodies, written_spans)
+    written = source_text(command, written_bodies, written_spans, literal)
+    joined_bodies, joined_spans = [], []
+    text = source_text(joined(command, set(literal)), joined_bodies, joined_spans)
     if (joined(written), list(map(joined, written_bodies)), list(map(joined, written_spans))) != (text, joined_bodies, joined_spans):
         raise Unmodelled("a backslash-newline that changes where a quote, substitution, heredoc or comment ends")
     if bodies is not None:
         bodies.extend(joined_bodies)
     if spans is not None:
-        spans.extend(joined_spans)
-    return text
+        spans.extend(written_spans)
+    return written
 
 
-def comment_end(command: str, index: int, end: int) -> int:
-    """`end`, the newline that ends the `#` comment at `index`: bash and zsh end a comment there even after a backslash, but one of them reads a substitution's text joined first, so a comment ending in a backslash raises Unmodelled."""
+CONTINUATION = re.compile(r"\\(?:\n|.)", re.S)
+COMMENT_IN_SUBSTITUTION = "a `#` comment ending in a backslash inside a substitution, which bash and zsh end at different places"
+LITERAL_BODY_IN_SUBSTITUTION = "bash and zsh end a quoted heredoc body holding a backslash-newline inside a substitution at different places: bash joins its lines, zsh keeps them"
+
+
+def joined(text: str, kept=()) -> str:
+    """`text` with each backslash-newline deleted, except one whose backslash is at an index in `kept`, a backslash escaped by another kept."""
+    return CONTINUATION.sub(lambda match: "" if match.group(0) == "\\\n" and match.start() not in kept else match.group(0), text)
+
+
+def continuations(command: str, start: int, end: int) -> list:
+    """The index of the backslash of each backslash-newline between `start` and `end`, a backslash escaped by another not counted."""
+    return [match.start() for match in CONTINUATION.finditer(command, start, end) if match.group(0) == "\\\n"]
+
+
+def comment_continues(command: str, index: int, end: int) -> bool:
+    """True when the `#` comment from `index` to the newline at `end` ends in a backslash no other escapes: bash and zsh still end it at that newline, except inside a substitution, where they part."""
     comment = command[index:end]
-    if (len(comment) - len(comment.rstrip("\\"))) % 2:
-        raise Unmodelled("a `#` comment ending in a backslash, which bash and zsh end at different places inside a substitution")
-    return end
+    return (len(comment) - len(comment.rstrip("\\"))) % 2 == 1
 
 
-def joined(text: str) -> str:
-    """`text` with each backslash-newline deleted, a backslash escaped by another kept."""
-    return re.sub(r"\\(\n|.)", lambda match: "" if match.group(1) == "\n" else match.group(0), text, flags=re.S)
+def substitution_holds(command: str, opens: list, settled: list, index: int) -> bool:
+    """True when a `$(`, `<(` or `>(` span whose `(` is at an index in `opens`, in order, is still open at `index`.
+
+    `settled[0]` counts the spans already known to close before an earlier
+    index, and advances past each span that closes before this one together
+    with the spans nested in it, so a call holding many of them and many
+    comments measures each top-level span once.
+    """
+    while settled[0] < len(opens):
+        close = closing_paren(command, opens[settled[0]])
+        if close > index:
+            return True
+        settled[0] = bisect.bisect_right(opens, close, settled[0] + 1)
+    return False
 
 
-def source_text(command: str, bodies=None, spans=None) -> str:
+def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
     """`command` without what the shell does not run as commands: `#` comments, the body of each heredoc, and each backslash-newline, which the shell deletes.
 
     A `#` starts a comment only at the start of a word, outside quotes and
@@ -542,10 +573,20 @@ def source_text(command: str, bodies=None, spans=None) -> str:
     text it decodes to. Double-quoted text is read by `double_quoted`, so a
     quote inside a substitution there cannot end it, and each substitution's
     script is appended to `spans` when it is a list.
+
+    A backslash-newline inside single quotes or `$'...'` is kept, as the
+    shells keep it, except in a backtick span, whose text they join first.
+    One that ends a `#` comment, or sits in a heredoc body whose delimiter is
+    quoted, is kept as well, and the index of its backslash is appended to
+    `literal` when it is a list; inside a substitution, where bash and zsh
+    part, the comment raises Unmodelled and the body ShellsDiffer.
     """
     kept = []
     pending = []
+    opens = []
+    settled = [0]
     quote = ""
+    backtick = False
     arithmetic = 0
     brackets = 0
     braces = 0
@@ -555,11 +596,13 @@ def source_text(command: str, bodies=None, spans=None) -> str:
         char = command[index]
         starts_word = at_word_start
         at_word_start = False
-        if char == "\\" and not quote:
+        if char == "\\" and (not quote or backtick and command.startswith("\\\n", index)):
             if command[index + 1 : index + 2] != "\n":
                 kept.append(command[index : index + 2])
             index += 2
             continue
+        if not quote and command.startswith(("$(", "<(", ">("), index):
+            opens.append(index + 1)
         if quote:
             if char == quote:
                 quote = ""
@@ -567,7 +610,8 @@ def source_text(command: str, bodies=None, spans=None) -> str:
             end = dollar_run(command, index)
             close = ansi_c_span(command, index)
             if close is not None:
-                text = ansi_c_text(command[end + 1 : close]).replace("'", "'\\''")
+                span = command[end + 1 : close]
+                text = ansi_c_text(joined(span) if backtick else span).replace("'", "'\\''")
                 kept.append(command[index : end - 1] + "'" + text + ("'" if close < len(command) else ""))
                 index = close + 1
                 continue
@@ -585,7 +629,12 @@ def source_text(command: str, bodies=None, spans=None) -> str:
             quote = char
         elif char == "#" and starts_word and not braces:
             end = command.find("\n", index)
-            index = len(command) if end == -1 else comment_end(command, index, end)
+            if end != -1 and comment_continues(command, index, end):
+                if backtick or substitution_holds(command, opens, settled, index):
+                    raise Unmodelled(COMMENT_IN_SUBSTITUTION)
+                if literal is not None:
+                    literal.append(end - 1)
+            index = len(command) if end == -1 else end
             continue
         elif command.startswith("${", index):
             braces += 1
@@ -611,7 +660,12 @@ def source_text(command: str, bodies=None, spans=None) -> str:
             brackets += 1 if char == "[" else -1
         elif char == "\n" and pending:
             kept.append(char)
-            index = skip_heredoc_bodies(command, index + 1, pending, bodies)
+            found = []
+            index = skip_heredoc_bodies(command, index + 1, pending, bodies, found)
+            if found and (backtick or substitution_holds(command, opens, settled, index)):
+                raise ShellsDiffer(LITERAL_BODY_IN_SUBSTITUTION)
+            if literal is not None:
+                literal.extend(found)
             pending = []
             at_word_start = True
             continue
@@ -625,6 +679,8 @@ def source_text(command: str, bodies=None, spans=None) -> str:
             kept.append(command[index:end] if expands else "<<" + "-" * strip_tabs + "'" + delimiter.replace("'", "'\\''") + "'")
             index = end
             continue
+        elif char == "`":
+            backtick = not backtick
         kept.append(char)
         at_word_start = not quote and char in WORD_START
         index += 1
@@ -796,7 +852,7 @@ def substitution_end(command: str, index: int, spans=None):
         script = command[index + 2 : end]
     elif command.startswith("`", index):
         end = escaped_close(command, index + 1, "`")
-        script = re.sub(r'\\([\\`$"])', r"\1", command[index + 1 : end])
+        script = joined(re.sub(r'\\([\\`$"])', r"\1", command[index + 1 : end]))
     else:
         return None
     if end >= len(command):
@@ -807,8 +863,7 @@ def substitution_end(command: str, index: int, spans=None):
 
 
 METACHARACTERS = " \t\n;&|()<>"
-CASE_OUTSIDE_COMMAND = "a `case` inside a substitution that is not at a command start it knows"
-COMMAND_LEADERS = ("!", "{", "do", "elif", "else", "if", "then", "time", "until", "while")
+CASE_IN_SUBSTITUTION = "a `case` inside a substitution"
 
 
 @functools.lru_cache(maxsize=None)
@@ -817,67 +872,34 @@ def closing_paren(command: str, start: int) -> int:
 
     Parentheses in quoted text, in a backtick span, after a backslash, in a
     `#` comment, in a heredoc body, in a `${...}` or in arithmetic do not
-    count, nor does a `case` pattern's. `case` and `esac` count only as bash
-    reads them: at the start of a command, or `esac` in place of a pattern, so
-    `cat case.txt` does not open one. A `case` is read only in the forms bash
-    documents, ending a branch with `;;`, `;&` or zsh's `;|`, and anything
-    else around one raises Unmodelled: a whole word `case` that is not its
-    subject or a pattern and not at a command start this reader knows, such
-    as zsh's `repeat 1 case` or `echo case`, a `(` after a pattern's first
-    character, or a subject not followed by `in`. A `${...}` holding
-    parentheses that do not balance raises ShellsDiffer, since bash 3.2 counts
-    them and zsh does not, after a run of `$` of any length too: zsh's lexer
-    takes a `$` before `{` as opening one. Double-quoted text is read by
-    `double_quoted`, so a substitution nested in it keeps its own quotes. A
-    `((` whose inner `(` closes just before the outer `)` is arithmetic, as
-    bash reads `$((` and `((`, and so is `$[...]`: a `<<` there is a shift,
-    and `<<<` is a here-string, never a heredoc. A `((` that is not arithmetic
-    is read twice, so each answer is cached: without that, nesting such a span
-    in double quotes doubles the reading at every level.
+    count. A `case` pattern's `)` would not count either, and a reading that
+    took one the wrong way would hide the text after it, so a whole word
+    `case` anywhere in the span raises Unmodelled, as does a `#` comment
+    ending in a backslash, which zsh ends at its line and bash does not;
+    `cat case.txt` holds no such word. A heredoc body whose delimiter is
+    quoted and that holds a backslash-newline raises ShellsDiffer, since bash
+    joins its lines here and zsh does not. A `${...}` holding parentheses that
+    do not balance raises ShellsDiffer, since bash 3.2 counts them and zsh
+    does not, after a run of `$` of any length too: zsh's lexer takes a `$`
+    before `{` as opening one. Double-quoted text is read by `double_quoted`,
+    so a substitution nested in it keeps its own quotes. A `((` whose inner
+    `(` closes just before the outer `)` is arithmetic, as bash reads `$((`
+    and `((`, and so is `$[...]`: a `<<` there is a shift, and `<<<` is a
+    here-string, never a heredoc. A `((` that is not arithmetic is read twice,
+    so each answer is cached: without that, nesting such a span in double
+    quotes doubles the reading at every level.
     """
     if command.startswith("((", start):
         end = arithmetic_close(command, start + 1)
         if command.startswith(")", end + 1):
             return end + 1
     depth = 0
-    cases = []
-    command_start = True
-    target = False
     pending = []
     index = start
     while index < len(command):
         char = command[index]
-        case = cases[-1] if cases and cases[-1][0] == depth else None
-        in_pattern = case is not None and case[1] == "pattern"
-        if index > start and char not in METACHARACTERS and command[index - 1] in METACHARACTERS:
-            is_case = word_at(command, index, "case")
-            if target:
-                target = False
-                command_start = False
-                if is_case:
-                    raise Unmodelled(CASE_OUTSIDE_COMMAND)
-            elif case and case[1] == "head":
-                case[2] -= 1
-                if not case[2]:
-                    if not word_at(command, index, "in"):
-                        raise Unmodelled("a `case` whose subject is not followed by `in`")
-                    case[1] = "pattern"
-                    case[3] = False
-                    index += 2
-                    continue
-            elif in_pattern:
-                if word_at(command, index, "esac"):
-                    cases.pop()
-            elif command_start:
-                if is_case:
-                    cases.append([depth, "head", 2, False])
-                elif case and word_at(command, index, "esac"):
-                    cases.pop()
-                command_start = any(word_at(command, index, word) for word in COMMAND_LEADERS)
-            elif is_case:
-                raise Unmodelled(CASE_OUTSIDE_COMMAND)
-        if in_pattern and char not in " \t\n(":
-            case[3] = True
+        if index > start and command[index - 1] in METACHARACTERS and word_at(command, index, "case"):
+            raise Unmodelled(CASE_IN_SUBSTITUTION)
         if char == "\\":
             index += 2
             continue
@@ -905,52 +927,34 @@ def closing_paren(command: str, start: int) -> int:
             index = end
         elif char == "#" and index > start and command[index - 1] in WORD_START:
             end = command.find("\n", index)
-            index = len(command) if end == -1 else comment_end(command, index, end)
+            if end != -1 and comment_continues(command, index, end):
+                raise Unmodelled(COMMENT_IN_SUBSTITUTION)
+            index = len(command) if end == -1 else end
             continue
-        elif char == "\n":
-            command_start = True
-            if pending:
-                index = skip_heredoc_bodies(command, index + 1, pending)
-                pending = []
-                continue
+        elif char == "\n" and pending:
+            found = []
+            index = skip_heredoc_bodies(command, index + 1, pending, literal=found)
+            if found:
+                raise ShellsDiffer(LITERAL_BODY_IN_SUBSTITUTION)
+            pending = []
+            continue
         elif command.startswith("<<<", index):
-            target = True
             index += 3
             continue
         elif char == "<" and (heredoc := heredoc_at(command, index)):
             pending.append(heredoc[1:])
             index = heredoc[0]
             continue
-        elif char in "<>":
-            target = not command.startswith("(", index + 1)
-        elif char in ";&|":
-            command_start = True
-            if case and case[1] == "body" and command.startswith((";;", ";&", ";|"), index):
-                case[1] = "pattern"
-                case[3] = False
-                index += 2
-                continue
         elif char == "(":
             arithmetic = arithmetic_close(command, index + 1) if command.startswith("((", index) else None
-            if in_pattern:
-                if case[3]:
-                    raise Unmodelled("a `case` pattern holding a `(` after its first character")
-                case[3] = True
-            elif arithmetic is not None and command.startswith(")", arithmetic + 1):
+            if arithmetic is not None and command.startswith(")", arithmetic + 1):
                 index = arithmetic + 1
-                command_start = False
             else:
                 depth += 1
-                command_start = True
         elif char == ")":
-            if case and case[1] == "pattern":
-                case[1] = "body"
-                command_start = True
-            else:
-                depth -= 1
-                if depth == 0:
-                    return index
-                command_start = False
+            depth -= 1
+            if depth == 0:
+                return index
         index += 1
     return len(command)
 
@@ -990,9 +994,11 @@ def parentheses_balance(command: str, index: int, end: int) -> bool:
         char = command[index]
         if char == "\\":
             index += 1
-        elif char in "'\"":
+        elif char == "'":
             close = command.find(char, index + 1, end)
             index = end if close == -1 else close
+        elif char == '"':
+            index = min(double_quoted(command, index + 1)[0], end)
         elif char == "(":
             depth += 1
         elif char == ")":
@@ -1008,11 +1014,13 @@ def word_at(command: str, index: int, word: str) -> bool:
     return command.startswith(word, index) and command[index + len(word) : index + len(word) + 1] in METACHARACTERS
 
 
-def skip_heredoc_bodies(command: str, index: int, pending: list, bodies=None) -> int:
+def skip_heredoc_bodies(command: str, index: int, pending: list, bodies=None, literal=None) -> int:
     """The index just past the closing line of each heredoc in `pending`, read in order from `index`.
 
     Stops at the start of the first body whose closing line never comes. The
-    body of each heredoc that expands is appended to `bodies` when it is a list.
+    body of each heredoc that expands is appended to `bodies` when it is a
+    list, and the backslash of each backslash-newline in a body that does not
+    to `literal`.
     """
     for strip_tabs, delimiter, expands in pending:
         starts = line_starts(command)[1 if strip_tabs else 0].get(delimiter, [])
@@ -1022,6 +1030,8 @@ def skip_heredoc_bodies(command: str, index: int, pending: list, bodies=None) ->
         position = starts[found]
         if expands and bodies is not None:
             bodies.append(command[index:position])
+        if not expands and literal is not None:
+            literal.extend(continuations(command, index, position))
         end = command.find("\n", position)
         index = len(command) if end == -1 else end + 1
     return index

@@ -1,7 +1,7 @@
 ---
 id: "0003"
 slug: "fix-deploy-gate-bypass"
-reviewed: d0fb265a237dcea5a8348457c219c8d0fe83adc6
+reviewed: 28f3cbbc67d7a407c35f61644ce1258e91ae44e8
 created: "2026-10-24"
 ---
 
@@ -287,6 +287,47 @@ Taken by Adam Akhlaq on 2026-10-31 at the review gate:
 - The four Importants become ticket T13, appended with `/toolkit:tickets 0003`, worked test-first and passed by a fresh verifier as T9 to T12 were; they stay open until T13 is done. Its grilling weighs blocking every `case` inside a double-quoted substitution, which ends the class, against modelling more forms.
 - The five Nits fold into T13, since four of them are in the code its fix touches.
 - A reader step matching or rewriting text where the shell does not was raised in the fourth (`$'` inside `$$'`), fifth (`<<` inside a here-string or arithmetic, `case` anywhere) and this round: `CLAUDE.md` gets a line that each such step is probed in every quoting and grammar context before it is handed on.
+
+### Waivers
+
+<none yet>
+
+## Review 2026-10-31 of 28f3cbb
+
+Three passes from `REVIEW.md` over the delta `d0fb265...28f3cbb`, which holds the seventh round's doc commits, the T13 ticket and T13, each in its own context. Every bypass below was re-run against the hooks at `28f3cbb` and at `d0fb265`, in `/bin/bash` 3.2 and `/bin/zsh` with a stub `git`. Two are regressions from T13's backslash-newline reading inside backticks, where an escaped pair `\\` before a newline is taken for a continuation. Three were already open at `d0fb265`: a `#` comment inside backticks that swallows the closing backtick, a `case` straight after `{`, which zsh reads as a keyword, and `##a` inside arithmetic, read as a comment. The sixth finding is a T13 acceptance line left unmet. The frontmatter's `reviewed:` now names this round's head.
+
+### Important
+
+- [ ] hooks/scripts/\_common.py:599 Inside a backtick span, the branch deletes a backslash-newline in single quotes even when its backslash is the second of an escaped pair `\\`. That pair is no continuation in either shell: the backtick unescape turns it into `\` and a newline inside single quotes, which both shells keep. ``echo `bash -c 'echo a # x \\``, newline, `` git tag v1'` `` reaches the inner reader as `echo a # x \git tag v1` and passes `deploy-gate`, and both shells run the tag; `x=` and `eval` forms do the same, and `is_git_commit` turns False on the `git commit -am x` form, so `red-guard`, `secret-guard` and `ticket-sync` miss it too. `d0fb265` blocked all of them. Fix: inside a backtick in quotes, read backslashes in pairs as the escape branch does outside quotes, and drop only a lone `\` before the newline. (bugs)
+- [ ] hooks/scripts/\_common.py:855 `substitution_end` joins a double-quoted backtick span's script after unescaping it, so the `\\` and newline the unescape turns into `\` and newline is then deleted inside single quotes. ``echo "`bash -c 'echo a # x \\``, newline, ``git tag v1'`"`` gives the span `bash -c 'echo a # x git tag v1'` and passes `deploy-gate`, and both shells run the tag. `d0fb265` blocked it. Fix: join the raw text first, then unescape. (bugs)
+- [ ] hooks/scripts/\_common.py:630 Inside a backtick span, a `#` comment runs on to the newline and swallows the closing backtick, so `backtick` stays True and line 599 then deletes the backslash-newline inside a later single-quoted `bash -c` or `eval` script. Both readings make the same mistake, so the agreement check at line 517 does not see it. `` x=`: # ` ``, newline, `bash -c 'echo a # x \`, newline, `git tag v1'`, its `eval` form and `` `# ` `` at the start pass `deploy-gate`, and both shells run the tag; `is_git_commit` is False on the `git commit` form. `d0fb265` misses these too. Fix: end a comment inside a backtick span at the first unescaped backtick before the newline, where both shells close the span, or raise `Unmodelled` on a `#` comment inside one. (security)
+- [ ] hooks/scripts/\_common.py:901 The `case` check fires only when the character before `case` is a metacharacter, but zsh also reads `case` as a keyword straight after `{`. `echo "$({case x in x) echo ")"; git tag v1; echo "(" ;; esac})"` and the same inside `if true; then ...; fi` pass `deploy-gate`, and zsh runs the tag. The docstring at line 876 says any whole-word `case` in the span raises. `d0fb265` misses these too. Fix: count `{` and `}` as a word start before `case`, and probe zsh's other reserved-word positions again. (security)
+- [ ] hooks/scripts/\_common.py:630 The `#` comment branch is still taken inside `((...))`, `$((...))` and `$[...]`, where `##a` is a character code. `(( y = ##a )); git tag v1` and `for (( i = ##a; i < 0; i++ )); do :; done; git tag v1` drop the rest of the line and pass `deploy-gate`, and both shells run the tag; with `echo $(( ##a )); git tag v1` and `echo $[ ##a ]; git tag v1`, zsh runs it. `d0fb265` and `main` miss these too. Fix: do not open a comment inside arithmetic or `$[...]`. (bugs)
+- [ ] hooks/scripts/deploy_gate.py:8 The module docstring names the `case` and the backslash-newline reasons but not `COMMENT_IN_SUBSTITUTION` (`_common.py:527`, raised at `:634` and `:931`), a third reason `Unmodelled` carries. T13's Context and Acceptance require it to name every reason; the verifier's note was moved to `docs/backlog.md:8` instead. Fix: add "or a `#` comment ending in a backslash inside a substitution" to the list and delete the backlog line. (compliance)
+
+### Nits
+
+- CHANGELOG.md:9 The opening sentence still says the gate catches a gated command in a `$(...)` that holds "a `case`", though any `case` there now blocks, contradicting a later sentence in the same entry; and it calls `"$(f() { case ...; })"` zsh's, though `f() { ...; }` is the POSIX form bash runs too. Fix: drop "or a `case`" and "zsh's". (compliance)
+- hooks/scripts/\_common.py:666 Inside a backtick span, a quoted heredoc body holding a backslash-newline raises `ShellsDiffer`, and a comment ending in a backslash raises `COMMENT_IN_SUBSTITUTION` (line 633); both messages say bash and zsh differ, but both shells join everything inside backticks, as T13's Evidence says. The over-block is not listed as a cost in the CHANGELOG or README. Fix: a reason for the backtick branch that does not claim the shells differ, and the cost named in the CHANGELOG. (compliance, bugs)
+- README.md:76 It says a backslash-newline is kept "inside single quotes or `$'...'`", but inside a backtick span both shells, and the reader, delete it there too. Fix: add "outside backticks". (compliance)
+- README.md:76 It says a `case` "anywhere inside a substitution" blocks, but `cat <(case x in x) echo hi;; esac)` at the top level is read, not blocked. No bypass: the text stays in the reading. Fix: scope the sentence, or raise on a `case` in a top-level `<(`/`>(` too. (bugs)
+- hooks/scripts/\_common.py:1022 The `skip_heredoc_bodies` docstring's last sentence is broken: "in a body that does not to `literal`". Fix: "in a body that does not expand is appended to `literal`". (bugs)
+
+1 Nit dropped: `tests/test_hooks.py:511` repeats a case already asserted at `:439`. Two compliance Nits on `CHANGELOG.md:9` are merged into one above.
+
+### Out of pass
+
+- Pre-existing over-block, also at `d0fb265`: `echo a \`, newline, `# c`, newline, `ls` raises `Unmodelled`, because the written reading does not start a word after a dropped backslash-newline (`_common.py:599-603`).
+- T13's `proves` names fewer forms than its test holds (the `"$(bash -c ...)"` and backtick ones).
+- No pull request exists yet, so its statement of merge danger could not be checked.
+
+### Decisions
+
+Taken by Adam Akhlaq on 2026-10-31 at the review gate:
+
+- The six Importants become ticket T14, appended with `/toolkit:tickets 0003`, worked test-first and passed by a fresh verifier as T9 to T13 were; they stay open until T14 is done. The `deploy_gate.py` docstring line rides along, since T14 edits the same list of reasons.
+- The five Nits fold into T14, since three are in code its fix touches and the rest are one-line wording fixes in files it updates.
+- Backtick spans and an escaped `\\` were missing from the contexts the seventh round's `CLAUDE.md` line lists, and three of this round's five bypasses sit there: the line is extended in place to name backticks, an escaped `\\` and the position straight after `{`.
 
 ### Waivers
 

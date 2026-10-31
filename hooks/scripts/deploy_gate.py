@@ -7,8 +7,9 @@ command and against each simple command in it, anchored at every word that
 could name a program, so `^git tag ` also catches `cd . && git tag v1` and
 `sudo git tag v1`. A call too long or too deeply nested to read is blocked
 rather than half read, as is one bash and zsh read differently, one holding
-a double-quoted substitution that never closes, and one holding a `case`
-form inside a substitution that the reader does not model.
+a double-quoted substitution that never closes, one holding a `case`
+inside a substitution, and one whose backslash-newline would change where
+a quote, substitution, heredoc or comment ends.
 A script fed to an interpreter, such as `echo 'git tag v1' | bash`, is not
 read, nor is a word built from a variable, such as `git $t v1`.
 """
@@ -233,7 +234,7 @@ def main() -> int:
     except Unmodelled as exc:
         if authorised(root):
             return 0
-        return block(f"Blocked: deploy-gate does not read {exc}, so it cannot tell where the substitution ends or whether this Bash call runs a gated command. Rephrase it or split the call.")
+        return block(f"Blocked: deploy-gate does not read {exc}, so it cannot tell whether this Bash call runs a gated command. Rephrase it or split the call.")
     except (Unreadable, RecursionError):
         if authorised(root):
             return 0

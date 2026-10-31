@@ -12,7 +12,9 @@ files:
     docs/backlog.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_backticks_brace_groups_and_arithmetic_are_read_as_the_shells_read_them: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `` echo `bash -c ''echo a # x \\` / `git tag v1''` ``, `` echo "`bash -c ''echo a # x \\` / `git tag v1''`" ``, `` x=`: # ` / `bash -c ''echo a # x \` / `git tag v1''` ``, `` `# ` / `eval ''echo a # x \` / `git tag v1''` ``, `(( y = ##a )); git tag v1`, `echo $(( ##a )); git tag v1`, `echo $[ ##a ]; git tag v1`, `{git tag v1}`, `true&&{git tag v1}`, `if {git tag v1}; then :; fi` and `echo "$({git tag v1})"` (lines joined by a newline); exits 2 naming a `case` on `echo "$({case x in x) echo ")"; git tag v1; echo "(" ;; esac})"`; and exits 0 silently on `` x=`echo a # note` ``, `` echo `echo ''a\` / `b''` ``, `find . -name x -exec echo {} \;`, `echo $(( 16#ff ))` and `echo a \` / `# c` / `ls`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `{git commit -am x}`, `` echo `bash -c ''echo a # x \\` / `git commit -am x''` `` and `` x=`: # ` / `bash -c ''echo a # x \` / `git commit -am x''` ``'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T14
 ---
 
 ## Context

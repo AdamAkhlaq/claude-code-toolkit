@@ -10,4 +10,5 @@ Follow-ups found while working a change or a review and not yet taken into one. 
 - `secret-guard` and `ticket-sync` have no timeout in `hooks/hooks.json` and no `"onFailure": "block"`, so a call they cannot finish reading in time runs, against `CLAUDE.md`'s rule. Found in the third review of 0003.
 - `agents/implementer.md:27` loops when a hook blocks a commit on a timeout or a fault rather than a red feedback command. Found in the review of 0002.
 - The `setup` skill's step 9 does not name `red-guard`. Found in the review of 0002.
+- On a case-insensitive filesystem, the default on macOS, `GIT tag v1`, `Git tag v1` and zsh's `=GIT tag v1` run `git`, in bash and zsh, but `deploy-gate` matches `gatedCommands` patterns case-sensitively and `find_commit` compares names exactly, so all four hooks miss them. Matching a program word case-insensitively changes how a consumer's patterns apply, so it needs its own decision. Found while working T15 of 0003.
 - `CHANGELOG.md`'s `[Unreleased]` compare link points at `v0.4.0` and there is no `[0.5.0]` link. Found in the first review of 0003.

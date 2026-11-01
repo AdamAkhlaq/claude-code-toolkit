@@ -81,3 +81,7 @@ The fourteenth ticket also added two blocks: a `case` inside an unquoted `$(...)
 ## Amendment 2026-11-01: a fifteenth ticket
 
 The ninth review, of `a6f928f`, found six Importants. One is a regression from T14: a backtick span whose script leaves a quote open pairs with a later quote in the call. Four were already open in the families T14 worked on: a quote inside zsh arithmetic, a `)` inside `${...}` or `$'...'` that `arithmetic_at` counts, zsh's glob group `x(N)` before a `#`, and zsh's `=git`. The sixth is a docstring line T14 left out. T15 was appended to fix them all, with three of the four Nits. The change now has fifteen tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.
+
+## Amendment 2026-11-01: a sixteenth ticket
+
+The tenth review, of `19f6f8b`, found four Importants. One is a regression from T15: a `((` glued to a reserved word, as in `if((`, or to zsh's `{` is no longer read as arithmetic, so a `<<` inside it is read as a heredoc that hides the lines after it. Two were already open: a `]` inside a `$(...)` nested in `$[...]` closes the `$[`, and a `(` starting an argument word or a pattern word inside `[[ ]]` is a zsh glob group that the reader took for a subshell. The fourth is a docstring line that names one reason wrongly. T16 was appended to fix them all, with the three Nits. The change now has sixteen tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.

@@ -1,7 +1,7 @@
 ---
 id: "0003"
 slug: "fix-deploy-gate-bypass"
-reviewed: 28f3cbbc67d7a407c35f61644ce1258e91ae44e8
+reviewed: a6f928f0b6357658cf4f8653505f2e4c690406bb
 created: "2026-10-24"
 ---
 
@@ -328,6 +328,44 @@ Taken by Adam Akhlaq on 2026-10-31 at the review gate:
 - The six Importants become ticket T14, appended with `/toolkit:tickets 0003`, worked test-first and passed by a fresh verifier as T9 to T13 were; they stay open until T14 is done. The `deploy_gate.py` docstring line rides along, since T14 edits the same list of reasons.
 - The five Nits fold into T14, since three are in code its fix touches and the rest are one-line wording fixes in files it updates.
 - Backtick spans and an escaped `\\` were missing from the contexts the seventh round's `CLAUDE.md` line lists, and three of this round's five bypasses sit there: the line is extended in place to name backticks, an escaped `\\` and the position straight after `{`.
+
+### Waivers
+
+<none yet>
+
+## Review 2026-11-01 of a6f928f
+
+Three passes from `REVIEW.md` over the delta `28f3cbb...a6f928f`, which holds the eighth round's doc commits, the T14 ticket and T14, each in its own context. Every bypass below was re-run against the hooks at `a6f928f` and at `28f3cbb`, in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git`. One is a regression from T14: the backtick branch puts a span's own reading back into the outer text, and a reading that ends inside an open quote pairs with a later quote. The rest were already open at `28f3cbb`, four of them in the families T14 worked on: a quote inside zsh arithmetic, a `)` inside `${...}` or `$'...'` that `arithmetic_at` counts, and zsh's glob group `x(N)` before a `#`. The fifth is zsh's `=git`. The sixth is a T14 acceptance line left unmet. The frontmatter's `reviewed:` now names this round's head.
+
+### Important
+
+- [ ] hooks/scripts/\_common.py:765 The backtick branch writes the span's own reading back into the outer text, and that reading can end inside an open quote, which `shell_tokens` then pairs with a quote later in the call, so the text between becomes one quoted word. `` echo `: "`; git tag v1; echo "x" ``, its `x=`, leading-span and newline forms, and `` echo `echo "a`; git tag v1; echo `echo b"` `` pass `deploy-gate`, and bash runs the tag; `28f3cbb` blocked all of them as `Unclosed`. The `'` forms (`` echo `: '`; git tag v1; echo 'x' ``, and the nested `` echo `echo \`echo 'a\``; git tag v1; echo `echo b'` ``, which zsh runs too) were already open at `28f3cbb`. `is_git_commit` is False on every commit form. Fix: raise `Unclosed` when a backtick span's script, or its reading, ends inside a quote; the reading must stay in the text, since the commit hooks read it from the tokens. (bugs, security)
+- [ ] hooks/scripts/\_common.py:1069 Inside arithmetic, `arithmetic_at` and `source_text` (line 687) read `'` and `"` as quotes, but zsh reads them as characters there, as in the character code `##'`. The scan finds no close, so the `((` is taken for two subshells and the `#` after it for a comment that hides the line. `(( y = ##' )); git tag v1 # '`, `(( 1 ' )); git tag v1 # '`, `(( y = ##" )); git tag v1 # "`, `echo $(( ##' )); git tag v1 # '`, `echo $[ ##' ]; git tag v1 # '` and the `for ((` form pass `deploy-gate`, and zsh runs the tag. `28f3cbb` misses them too. Fix: a `'` or `"` inside `((...))`, `$((...))` or `$[...]` raises ShellsDiffer, since bash reads a quote there and zsh a character. (security)
+- [ ] hooks/scripts/\_common.py:1055 `arithmetic_at` counts a `)` inside `${...}` or `$'...'`, so it takes `((` for two subshells and `##a` for a comment, and the eighth review's `##a` finding stays open for these forms. `(( ${x/)/} + ##a )); git tag v1` and `(( ${x:-)} + ##a )); git tag v1` pass `deploy-gate`, and zsh runs the tag; `(( $'\')' + ##a )); git tag v1` passes, and bash runs it. `28f3cbb` misses them too. Fix: step over `${...}` with `parameter_close` and `$'...'` with `ansi_c_span` in `arithmetic_at` (and `arithmetic_close`), as `source_text` does. (bugs)
+- [ ] hooks/scripts/\_common.py:727 After any `(` of kind `""`, including one in the middle of a word, which zsh reads as a glob group, a `)` starts a word, so a `#` straight after it is read as a comment. `setopt nonomatch; echo x(N)#y; git tag v1` passes `deploy-gate`, and zsh runs the tag; bash rejects `x(` as a syntax error. `28f3cbb` misses it too. Fix: give a `(` after a non-metacharacter the `ARRAY` kind, so a `#` after its `)` raises ShellsDiffer. (bugs)
+- [ ] hooks/scripts/deploy_gate.py:76 zsh's `EQUALS` expansion turns `=git` into the path of `git`, so `=git tag v1` and `{=git tag v1}` pass `deploy-gate`, and zsh runs the tag; the basename check does not know `=git`. `28f3cbb` and `main` miss it too. Fix: read a word starting with `=` also as the word without it, wherever a program name is tested, in `deploy-gate` and `find_commit`. (bugs, out of pass)
+- [ ] hooks/scripts/deploy_gate.py:10 The module docstring names the three `Unmodelled` reasons but the `ShellsDiffer` ones only through "one bash and zsh read differently", leaving `LITERAL_BODY_IN_SUBSTITUTION` and T14's `HASH_AFTER_ARRAY` unnamed, though T14's Acceptance says it names every reason both carry. The `docs/backlog.md` line T14 deleted tracked the first of them. Fix: name each `ShellsDiffer` reason in the list. (compliance)
+
+### Nits
+
+- README.md:76 The README says a `case`, a `#` comment ending in a backslash, and a quoted heredoc body holding a backslash-newline block the call "inside a substitution", and `CHANGELOG.md:9` and the `deploy_gate.py` docstring say the same, but inside a backtick span none of them blocks now: `` echo `case x in x) echo hi;; esac` `` exits 0. No bypass, since the span ends at its backtick either way. Fix: say "a `$(...)`, `<(...)` or `>(...)` span" in all three places. (compliance)
+- README.md:76 "A word in quotes names no program" no longer holds for a quoted brace: `brace_group_words` splits after quote removal, so `echo "{git" tag v1` is blocked. `CHANGELOG.md:9` does not list the cost either. Fix: name the quoted-brace over-block beside the brace-group sentence in both. (compliance)
+- CHANGELOG.md:9 The entry does not record the two blocks T14 lifts: a `#` comment ending in a backslash, and a quoted heredoc body holding a backslash-newline, inside a backtick span. Fix: one clause saying both are now read. (compliance)
+- docs/changes/0003-fix-deploy-gate-bypass/intent.md:77 The fourteenth-ticket amendment does not mention the new blocks T14 added: a `case` inside an unquoted substitution in every hook, and a `#` straight after an array's `)`. Fix: one clause. (compliance)
+
+0 Nits dropped.
+
+### Out of pass
+
+- `brace_group_words` changes the tokens of a brace-wrapped argument such as `-m {fix}` for every commit hook. Checked: `red-guard`'s `only_bookkeeping` then reads `{` as a program and runs the full check, `secret-guard` and `ticket-sync` read only `is_git_commit` and `commits_all_tracked`, which splits on whitespace, so it opens nothing.
+- No test covers a quote inside arithmetic or an unclosed quote inside a backtick span.
+- No pull request exists yet, so its statement of merge danger could not be checked.
+
+### Decisions
+
+- The six Importants go to a new ticket, T15, appended with `/toolkit:tickets`; each finding stays open until T15 is done. (maintainer, "New ticket T15")
+- The four Nits are folded into T15, which touches the same README and CHANGELOG paragraphs. (maintainer, "Fold into T15")
+- Three findings come from a scan deciding where a span ends without stepping over what the shells step over there, the same kind raised in earlier rounds of this review (the `parentheses_balance` quote finding, `closing_paren`'s heredoc finding). `CLAUDE.md` gains a line: a scan that decides where a span ends steps over exactly the constructs each shell steps over there, probed with each one holding the closing character, in bash and zsh. (maintainer, "Add the line")
 
 ### Waivers
 

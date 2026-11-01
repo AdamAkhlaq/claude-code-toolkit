@@ -12,7 +12,7 @@ files:
     docs/backlog.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_spans_end_where_the_shells_end_them_and_zsh_words_name_what_they_run: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming a quote left open on `` echo `: "`; git tag v1; echo "x" ``, `` x=`: "`; git tag v1; echo "x" ``, `` echo `echo "a`; git tag v1; echo `echo b"` ``, `` echo `: ''`; git tag v1; echo ''x'' `` and `` echo `echo \`echo ''a\``; git tag v1; echo `echo b''` ``; exits 2 naming bash and zsh on `(( y = ##'' )); git tag v1 # ''`, `(( y = ##" )); git tag v1 # "`, `echo $(( ##'' )); git tag v1 # ''`, `echo $[ ##'' ]; git tag v1 # ''`, `(( ${x/)/} + ##a )); git tag v1`, `(( ${x:-)} + ##a )); git tag v1`, `(( $''\'')'' + ##a )); git tag v1` and `setopt nonomatch; echo x(N)#y; git tag v1`; exits 2 naming release authorisation on `=git tag v1` and `{=git tag v1}`; and exits 0 silently on `echo $(( ${x:-1} + 1 ))`, `((echo ''a'') )`, `f() { :; }; f`, `echo a=b` and `x=$(echo a); echo "$x"`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `=git commit -am x`, `(( ${x/)/} + ##a )); git commit -am x` and `` echo `: "`; git commit -am x; echo "x" ``'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T15
 ---
@@ -174,3 +174,16 @@ The second used another throwaway repo with `"feedbackCommand": "echo boom-red; 
 | `echo $(( ${x:-1} + 1 ))` | ran: `2` |
 
 No tag was created and nothing was committed in either repo.
+
+### Verifier 2026-11-01 18:02
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok. `id`, `title`, `blocked_by`, `files`, `proves`, `status: in-progress`, `executed_by` and `branch` are all present, and Evidence quotes a run of the feedback command.
+2. proving test present and meaningful: ok. `DeployGateTests.test_spans_end_where_the_shells_end_them_and_zsh_words_name_what_they_run` is new, and `RedGuardTests.test_reworded_commits_are_recognised` gains 7 rows. Both run the hooks as subprocesses. With this branch's `tests/test_hooks.py` against the hooks of `change/0003-fix-deploy-gate-bypass`, both fail: ``0 != 2 : echo `: "`; git tag v1; echo "x"`` and `0 != 2 : =git commit -am x`. Row by row against the old gate, 40 of the 41 blocking rows exited 0 there (the double-quoted `$(( ##' ))` row was already blocked) and exit 2 here, and the 10 rows that must pass exit 0 under both. Stub-`git` probes confirm that zsh runs the tag on `x(N)#y`, `=git`, `(( y = ##' ))` and `(( ${x/)/} + ##a ))`, and bash runs it on ``echo `: "`; git tag v1``.
+3. proving test run: exit 0, `Ran 2 tests in 5.758s OK`.
+4. feedback command: exit 0, `Ran 89 tests in 25.620s OK`.
+5. acceptance: 10 of 10 checked, none failed. (a) The proving test passes (check 3). (b) The test diff only adds; no existing assertion changed. (c) The timing `assertLess` cases pass in the feedback run. (d) The backtick rows, nested ones included, exit 2 with "leaves a quote open" (`Unclosed(QUOTE_IN_BACKTICKS)`). (e) A quote in `((`, `$((` and `$[` raises `QUOTE_IN_ARITHMETIC` through `arithmetic_end`, called from `closing_paren` and from `source_text`'s `((` and `$[` branches, and `source_text` also checks inside arithmetic. (f) `arithmetic_at` and `arithmetic_close` are replaced by `arithmetic_end`/`bracket_close`, which step over `$'...'` and `${...}` as each shell does and raise ShellsDiffer where the two end apart, per the executor's amendment. My probes confirmed that bash does not run the tag on the `${x/)/}` form. (g) The glob-group rows exit 2 naming bash and zsh, and `f() { :; }; f`, `f()#x` newline `{ :; }` and `echo x(N)` exit 0. (h) `program_name` strips one `=` and is used in `deploy_gate.readings` and `find_commit`. (i) The docstring names every ShellsDiffer, Unclosed and Unmodelled reason that `_common.py` raises. (j) CHANGELOG and README describe the new reading, and the three Nits (span wording, quoted-brace over-block, lifted backtick blocks) are in the diff.
+6. scope: ok. The changed files are `CHANGELOG.md`, `README.md`, `docs/backlog.md`, `hooks/scripts/_common.py`, `hooks/scripts/deploy_gate.py`, `tests/test_hooks.py` and the ticket file, all within `files`.
+7. tests intact: ok. `git diff change/0003-fix-deploy-gate-bypass...HEAD -- tests/` shows additions only, with no deletions, skips or loosened values.

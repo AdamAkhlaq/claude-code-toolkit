@@ -165,7 +165,29 @@ def shell_tokens(command: str) -> list:
         tokens = list(lexer)
     except ValueError:
         tokens = [unquote(token) for token in re.findall(FALLBACK_TOKEN, script)]
-    return [part for token in tokens for part in (OPERATOR.findall(token) if is_operator(token) else [token])]
+    return [part for token in tokens for part in (OPERATOR.findall(token) if is_operator(token) else brace_group_words(token))]
+
+
+def brace_group_words(word: str) -> list:
+    """`word` with the braces of a zsh brace group as words of their own.
+
+    zsh opens a brace group at a `{` that starts a command word and closes it
+    at a `}` that ends a word, so `{git tag v1}` runs `git tag v1`. The `{` is
+    split off wherever it starts a word, and a `}` wherever it ends one it
+    does not close, so a program name behind one is read; `{}` stays whole,
+    as zsh keeps it. Quotes are already gone, so a quoted brace is split too,
+    except in a word holding whitespace, which only quotes make: that word is
+    a script or an argument, such as the one `zsh -c '{git tag v1}'` reads.
+    """
+    if any(char.isspace() for char in word):
+        return [word]
+    words = []
+    while word.startswith("{") and word != "{}" and len(word) > 1:
+        words.append("{")
+        word = word[1:]
+    if len(word) > 1 and word.endswith("}") and word.count("}") > word.count("{"):
+        return [*words, word[:-1], "}"]
+    return [*words, word]
 
 
 QUOTED = r"'[^']*'|\"(?:\\.|[^\"\\])*\""
@@ -205,6 +227,22 @@ def escaped_close(command: str, index: int, mark: str) -> int:
     while index < len(command) and command[index] != mark:
         index += 2 if command[index] == "\\" else 1
     return min(index, len(command))
+
+
+BACKTICK_ESCAPE = re.compile(r"\\([\\`$\n])")
+QUOTED_BACKTICK_ESCAPE = re.compile(r'\\([\\`$"\n])')
+
+
+def backtick_script(span: str, quoted: bool = False) -> str:
+    """The script of a backtick span, as bash and zsh make it before reading it.
+
+    One pass from the left takes the backslash off `\\\\`, `\\``, `\\$` and,
+    inside double quotes, `\\"`, and deletes each backslash-newline; any other
+    backslash stays. So `\\\\` before a newline leaves `\\` and the newline,
+    which the script then reads by its own quotes.
+    """
+    escape = QUOTED_BACKTICK_ESCAPE if quoted else BACKTICK_ESCAPE
+    return escape.sub(lambda match: "" if match.group(1) == "\n" else match.group(1), span)
 
 
 def ansi_c_span(command: str, index: int):
@@ -514,7 +552,7 @@ def shell_source(command: str, bodies=None, spans=None) -> str:
     written = source_text(command, written_bodies, written_spans, literal)
     joined_bodies, joined_spans = [], []
     text = source_text(joined(command, set(literal)), joined_bodies, joined_spans)
-    if (joined(written), list(map(joined, written_bodies)), list(map(joined, written_spans))) != (text, joined_bodies, joined_spans):
+    if flattened(written, written_bodies, written_spans) != flattened(text, joined_bodies, joined_spans):
         raise Unmodelled("a backslash-newline that changes where a quote, substitution, heredoc or comment ends")
     if bodies is not None:
         bodies.extend(joined_bodies)
@@ -526,6 +564,10 @@ def shell_source(command: str, bodies=None, spans=None) -> str:
 CONTINUATION = re.compile(r"\\(?:\n|.)", re.S)
 COMMENT_IN_SUBSTITUTION = "a `#` comment ending in a backslash inside a substitution, which bash and zsh end at different places"
 LITERAL_BODY_IN_SUBSTITUTION = "bash and zsh end a quoted heredoc body holding a backslash-newline inside a substitution at different places: bash joins its lines, zsh keeps them"
+
+
+def flattened(text: str, bodies: list, spans: list) -> tuple:
+    return joined(text), [joined(body) for body in bodies], [joined(span) for span in spans]
 
 
 def joined(text: str, kept=()) -> str:
@@ -560,23 +602,36 @@ def substitution_holds(command: str, opens: list, settled: list, index: int) -> 
     return False
 
 
+WORD, ARITHMETIC, ARRAY = "word", "arithmetic", "array"
+HASH_AFTER_ARRAY = "bash and zsh read a `#` straight after an array's `)` differently: bash as part of the word, zsh as a comment"
+
+
 def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
     """`command` without what the shell does not run as commands: `#` comments, the body of each heredoc, and each backslash-newline, which the shell deletes.
 
-    A `#` starts a comment only at the start of a word, outside quotes and
-    `${...}`, so `a\\ #b` and `${x/ #/}` do not. A `<<` inside `((...))`,
-    `$((...))` or `$[...]` is a shift, not a heredoc. A heredoc whose closing
+    A `#` starts a comment only at the start of a word, outside quotes,
+    `${...}` and arithmetic, so `a\\ #b`, `${x/ #/}` and `(( ##a ))` do not,
+    and the `)` of `$(...)`, `<(...)`, `>(...)` or `$((...))` does not end a
+    word, so `$(a)#b` does not either. A `#` straight after an array's `)`,
+    part of the word to bash and a comment to zsh, raises ShellsDiffer. A
+    `((` is arithmetic where `closing_paren` would read it so, and a `<<`
+    inside it or `$[...]` is a shift, not a heredoc. Since a `case`
+    pattern's `)` would close a parenthesis it does not open, a `case` inside
+    a `$(...)`, `<(...)` or `>(...)` span raises Unmodelled. A heredoc whose closing
     line never comes keeps its body, so a missing delimiter cannot hide the
     lines after it. When `bodies` is a list, the body of each heredoc whose
     delimiter is unquoted is appended to it: the shell still runs `$(...)` and
     backticks there. Each `$'...'` span is written as the plain single-quoted
     text it decodes to. Double-quoted text is read by `double_quoted`, so a
     quote inside a substitution there cannot end it, and each substitution's
-    script is appended to `spans` when it is a list.
+    script is appended to `spans` when it is a list. A backtick span ends at
+    its first unescaped backtick, as both shells end it before reading what
+    is inside; its script, from `backtick_script`, is appended to `spans` and
+    its own reading kept in place of its text.
 
     A backslash-newline inside single quotes or `$'...'` is kept, as the
-    shells keep it, except in a backtick span, whose text they join first.
-    One that ends a `#` comment, or sits in a heredoc body whose delimiter is
+    shells keep it; in a backtick span `backtick_script` has already deleted
+    it. One that ends a `#` comment, or sits in a heredoc body whose delimiter is
     quoted, is kept as well, and the index of its backslash is appended to
     `literal` when it is a list; inside a substitution, where bash and zsh
     part, the comment raises Unmodelled and the body ShellsDiffer.
@@ -586,8 +641,9 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
     opens = []
     settled = [0]
     quote = ""
-    backtick = False
-    arithmetic = 0
+    parens = []
+    words = 0
+    matches = {}
     brackets = 0
     braces = 0
     at_word_start = True
@@ -596,9 +652,12 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
         char = command[index]
         starts_word = at_word_start
         at_word_start = False
-        if char == "\\" and (not quote or backtick and command.startswith("\\\n", index)):
+        arithmetic = bool(parens) and parens[-1] == ARITHMETIC
+        if char == "\\" and not quote:
             if command[index + 1 : index + 2] != "\n":
                 kept.append(command[index : index + 2])
+            else:
+                at_word_start = starts_word
             index += 2
             continue
         if not quote and command.startswith(("$(", "<(", ">("), index):
@@ -611,7 +670,7 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             close = ansi_c_span(command, index)
             if close is not None:
                 span = command[end + 1 : close]
-                text = ansi_c_text(joined(span) if backtick else span).replace("'", "'\\''")
+                text = ansi_c_text(span).replace("'", "'\\''")
                 kept.append(command[index : end - 1] + "'" + text + ("'" if close < len(command) else ""))
                 index = close + 1
                 continue
@@ -627,10 +686,10 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             continue
         elif char == "'":
             quote = char
-        elif char == "#" and starts_word and not braces:
+        elif char == "#" and starts_word and not braces and not arithmetic and not brackets:
             end = command.find("\n", index)
             if end != -1 and comment_continues(command, index, end):
-                if backtick or substitution_holds(command, opens, settled, index):
+                if substitution_holds(command, opens, settled, index):
                     raise Unmodelled(COMMENT_IN_SUBSTITUTION)
                 if literal is not None:
                     literal.append(end - 1)
@@ -643,14 +702,33 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             continue
         elif braces and char == "}":
             braces -= 1
-        elif command.startswith("((", index):
-            arithmetic += 2
-            kept.append("((")
-            index += 2
-            at_word_start = True
+        elif char == "(" and not braces:
+            before = command[index - 1 : index]
+            if command.startswith("((", index) and (before == "$" or not arithmetic) and arithmetic_at(command, index + 1, matches):
+                parens.extend([WORD if before == "$" else "", ARITHMETIC])
+                words += before == "$"
+                kept.append("((")
+                index += 2
+                at_word_start = True
+                continue
+            if before == "$" or before in ("<", ">") and not arithmetic:
+                parens.append(WORD)
+            elif arithmetic:
+                parens.append(ARITHMETIC)
+            else:
+                parens.append(ARRAY if before == "=" else "")
+            words += parens[-1] == WORD
+        elif char == ")" and parens and not braces:
+            kind = parens.pop()
+            words -= kind == WORD
+            if kind == ARRAY and command.startswith("#", index + 1):
+                raise ShellsDiffer(HASH_AFTER_ARRAY)
+            kept.append(char)
+            at_word_start = kind in ("", ARITHMETIC)
+            index += 1
             continue
-        elif arithmetic and char in "()":
-            arithmetic += 1 if char == "(" else -1
+        elif words and not braces and char == "c" and keyword_position(command, index, 0) and word_at(command, index, "case"):
+            raise Unmodelled(CASE_IN_SUBSTITUTION)
         elif command.startswith("$[", index):
             brackets += 1
             kept.append("$[")
@@ -662,7 +740,7 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             kept.append(char)
             found = []
             index = skip_heredoc_bodies(command, index + 1, pending, bodies, found)
-            if found and (backtick or substitution_holds(command, opens, settled, index)):
+            if found and substitution_holds(command, opens, settled, index):
                 raise ShellsDiffer(LITERAL_BODY_IN_SUBSTITUTION)
             if literal is not None:
                 literal.extend(found)
@@ -680,7 +758,13 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             index = end
             continue
         elif char == "`":
-            backtick = not backtick
+            end = escaped_close(command, index + 1, "`")
+            script = backtick_script(command[index + 1 : end])
+            if spans is not None:
+                spans.append(script)
+            kept.append("`" + shell_source(script) + command[end : end + 1])
+            index = end + 1
+            continue
         kept.append(char)
         at_word_start = not quote and char in WORD_START
         index += 1
@@ -852,7 +936,7 @@ def substitution_end(command: str, index: int, spans=None):
         script = command[index + 2 : end]
     elif command.startswith("`", index):
         end = escaped_close(command, index + 1, "`")
-        script = joined(re.sub(r'\\([\\`$"])', r"\1", command[index + 1 : end]))
+        script = backtick_script(command[index + 1 : end], quoted=True)
     else:
         return None
     if end >= len(command):
@@ -874,7 +958,8 @@ def closing_paren(command: str, start: int) -> int:
     `#` comment, in a heredoc body, in a `${...}` or in arithmetic do not
     count. A `case` pattern's `)` would not count either, and a reading that
     took one the wrong way would hide the text after it, so a whole word
-    `case` anywhere in the span raises Unmodelled, as does a `#` comment
+    `case` anywhere in the span raises Unmodelled, after a `{` too, where zsh
+    opens a brace group, as does a `#` comment
     ending in a backslash, which zsh ends at its line and bash does not;
     `cat case.txt` holds no such word. A heredoc body whose delimiter is
     quoted and that holds a backslash-newline raises ShellsDiffer, since bash
@@ -898,7 +983,7 @@ def closing_paren(command: str, start: int) -> int:
     index = start
     while index < len(command):
         char = command[index]
-        if index > start and command[index - 1] in METACHARACTERS and word_at(command, index, "case"):
+        if keyword_position(command, index, start) and word_at(command, index, "case"):
             raise Unmodelled(CASE_IN_SUBSTITUTION)
         if char == "\\":
             index += 2
@@ -957,6 +1042,49 @@ def closing_paren(command: str, start: int) -> int:
                 return index
         index += 1
     return len(command)
+
+
+def keyword_position(command: str, index: int, start: int) -> bool:
+    """True when a word at `index`, after `start`, sits where bash or zsh can read it as a keyword: after a metacharacter, or after a run of `{` that does, where zsh opens a brace group."""
+    before = index
+    while before > start and command[before - 1] == "{":
+        before -= 1
+    return before > start and command[before - 1] in METACHARACTERS
+
+
+def arithmetic_at(command: str, start: int, matches: dict) -> bool:
+    """True when the `((` whose inner `(` is at `start` is arithmetic, as `closing_paren` decides: that `(` closes just before a `)`.
+
+    `matches` holds the close of each `(` already found, so a run of `((`
+    is scanned once rather than once for each.
+    """
+    if start not in matches:
+        opens = []
+        index = start
+        while index < len(command):
+            char = command[index]
+            if char == "\\":
+                index += 2
+                continue
+            if char == "'":
+                end = command.find("'", index + 1)
+                index = len(command) if end == -1 else end
+            elif char == '"':
+                index = double_quoted(command, index + 1)[0]
+            elif char == "`":
+                index = escaped_close(command, index + 1, "`")
+            elif command.startswith("$(", index):
+                index = closing_paren(command, index + 1)
+            elif char == "(":
+                opens.append(index)
+            elif char == ")":
+                matches[opens.pop()] = index
+                if not opens:
+                    break
+            index += 1
+        for unclosed in opens:
+            matches[unclosed] = len(command)
+    return command.startswith(")", matches[start] + 1)
 
 
 def arithmetic_close(command: str, start: int, pair: str = "()") -> int:
@@ -1020,7 +1148,7 @@ def skip_heredoc_bodies(command: str, index: int, pending: list, bodies=None, li
     Stops at the start of the first body whose closing line never comes. The
     body of each heredoc that expands is appended to `bodies` when it is a
     list, and the backslash of each backslash-newline in a body that does not
-    to `literal`.
+    expand is appended to `literal` when it is a list.
     """
     for strip_tabs, delimiter, expands in pending:
         starts = line_starts(command)[1 if strip_tabs else 0].get(delimiter, [])

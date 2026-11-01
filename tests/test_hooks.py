@@ -576,13 +576,27 @@ class DeployGateTests(HookCase):
             'echo "$(echo $(( ##a )); git tag v1)"',
             "echo $(( ${x:-1} + ##a )); git tag v1",
             "echo a \\\n# c \\\ngit tag v1",
+            "echo `echo a`#x; git tag v1",
+            "echo `: # \\\\`; git tag v1",
+            "echo $(echo a)#x; git tag v1",
+            "cat <(echo a)#x; git tag v1",
+            "x=$(echo a)#x; git tag v1",
+            "echo $( (echo a) )#x; git tag v1",
+            "echo $((1))#x; git tag v1",
+            "echo $(( (1) ))#x; git tag v1",
+            "echo $((cat <<EOF\nit's\nEOF\n) ); git tag v1; echo \"'\"",
+            "((echo a) # it's\n); git tag v1; echo \"'\"",
         ):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
             self.assertIn("release authorisation", err, command)
+        code, _, err = run_hook("deploy_gate.py", bash_event("a=(b)#x; git tag v1"), self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("bash and zsh", err)
         for command in (
             """echo "$({case x in x) echo ")"; git tag v1; echo "(" ;; esac})\"""",
             """echo "$(true;{case x in x) echo ")"; git tag v1; echo "(" ;; esac})\"""",
+            "cat <(case x in x) echo hi;; esac)",
         ):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
@@ -954,6 +968,7 @@ class RedGuardTests(HookCase):
             "echo `bash -c 'echo a # x \\\\\ngit commit -am x'`",
             "x=`: # `\nbash -c 'echo a # x \\\ngit commit -am x'",
             "(( y = ##a )); git commit -am x",
+            "echo $(echo a)#x; git commit -am x",
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
@@ -962,6 +977,7 @@ class RedGuardTests(HookCase):
             """echo "$(f() case x in a) echo "'";; esac)"; git commit -am x; echo "'\"""",
             """echo "$(case x { x) echo a;; })"; git commit -am x; echo ")\"""",
             """echo "$(case case in case) echo a;; esac)"; git commit -am x""",
+            "x=$(case x in a) echo A;; esac); git commit -am x",
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)

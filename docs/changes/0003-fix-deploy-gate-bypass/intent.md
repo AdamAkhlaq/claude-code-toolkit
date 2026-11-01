@@ -75,3 +75,9 @@ The seventh review, of `d0fb265`, found a regression from T12, where a backslash
 ## Amendment 2026-10-31: a fourteenth ticket
 
 The eighth review, of `28f3cbb`, found six Importants. Two are regressions from T13, where an escaped `\\` before a newline inside a backtick span was taken for a continuation. Three were already open: a `#` comment inside backticks that swallows the closing backtick, a `case` straight after `{`, and `##a` inside arithmetic read as a comment. The sixth is a docstring line T13 left out. A seventh bypass, zsh's `{git tag v1}`, was found while cutting the ticket. T14 was appended to fix them all. Under T14, a backtick span is found by its closing backtick and then read as a script, a zsh brace group's `{` and `}` are split off the words they touch, and no comment opens inside arithmetic. The change now has fourteen tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.
+
+The fourteenth ticket also added two blocks: a `case` inside an unquoted `$(...)`, `<(...)` or `>(...)` span now blocks every hook, and a `#` straight after an array's `)` raises ShellsDiffer.
+
+## Amendment 2026-11-01: a fifteenth ticket
+
+The ninth review, of `a6f928f`, found six Importants. One is a regression from T14: a backtick span whose script leaves a quote open pairs with a later quote in the call. Four were already open in the families T14 worked on: a quote inside zsh arithmetic, a `)` inside `${...}` or `$'...'` that `arithmetic_at` counts, zsh's glob group `x(N)` before a `#`, and zsh's `=git`. The sixth is a docstring line T14 left out. T15 was appended to fix them all, with three of the four Nits. The change now has fifteen tickets in one chain, executed `single` on `change/0003-fix-deploy-gate-bypass`.

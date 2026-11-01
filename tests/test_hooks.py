@@ -612,6 +612,78 @@ class DeployGateTests(HookCase):
         ):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
 
+    def test_spans_end_where_the_shells_end_them_and_zsh_words_name_what_they_run(self):
+        self.configure(gatedCommands=["^git tag "])
+        for command in (
+            'echo `: "`; git tag v1; echo "x"',
+            'x=`: "`; git tag v1; echo "x"',
+            '`: "`; git tag v1; echo "x"',
+            'echo `: "`\ngit tag v1\necho "x"',
+            'echo `echo "a`; git tag v1; echo `echo b"`',
+            "echo `: '`; git tag v1; echo 'x'",
+            "echo `echo \\`echo 'a\\``; git tag v1; echo `echo b'`",
+            'echo `echo \\`: "\\``; git tag v1; echo "x"',
+            "echo `: $'a`; git tag v1; echo 'x'",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("leaves a quote open", err, command)
+        for command in (
+            "(( y = ##' )); git tag v1 # '",
+            "(( 1 ' )); git tag v1 # '",
+            '(( y = ##" )); git tag v1 # "',
+            "echo $(( ##' )); git tag v1 # '",
+            "echo $[ ##' ]; git tag v1 # '",
+            "for (( i = ##'; i < 0; i++ )); do :; done; git tag v1 # '",
+            "echo \"$(( ##' ))\"; git tag v1 # '",
+            "(( ${x/)/} + ##a )); git tag v1",
+            "(( ${x:-)} + ##a )); git tag v1",
+            "(( ${x:-(} + ##a )); git tag v1",
+            "(( $'\\')' + ##a )); git tag v1",
+            "setopt nonomatch; echo x(N)#y; git tag v1",
+            'setopt nonomatch; echo "x"(N)#y; git tag v1',
+            "setopt nonomatch; echo x\\((N)#y; git tag v1",
+            "setopt nonomatch; echo x(a|#b); git tag v1",
+            "setopt nonomatch extendedglob; echo x(#qN); git tag v1",
+            "setopt nonomatch extendedglob; echo *(#qN); git tag v1",
+            "setopt nonomatch; echo x((a)|b)#y; git tag v1",
+            "setopt nonomatch; echo x(a)(b)#y; git tag v1",
+            "setopt nonomatch; echo x(a b)#y; git tag v1",
+            "setopt nonomatch; echo ${x}(N)#y; git tag v1",
+            "setopt nonomatch; echo $x(N)#y; git tag v1",
+            "setopt nonomatch; echo ~(N)#y; git tag v1",
+            "setopt nonomatch; [[ a == x(a|b)#y ]]; git tag v1",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("bash and zsh", err, command)
+        for command in (
+            "=git tag v1",
+            "{=git tag v1}",
+            "env =git tag v1",
+            "true && =git tag v1",
+            "x=1 =git tag v1",
+            "command =git tag v1",
+            "echo $(=git tag v1)",
+            "=bash -c 'git tag v1'",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err, command)
+        for command in (
+            "echo $(( ${x:-1} + 1 ))",
+            "(( ${x/(/)} + 1 ))",
+            "echo $(( x[1] + (2) ))",
+            "((echo 'a') )",
+            "f() { :; }; f",
+            "f()#x\n{ :; }",
+            "echo x(N)",
+            "echo a=b",
+            "x=$(echo a); echo \"$x\"",
+            "echo `echo \"it's\"`",
+        ):
+            self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+
     def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
         self.configure(gatedCommands=["^git tag ", "^git push .*--force"])
         refs = " ".join(f"r{n}" for n in range(70))
@@ -969,10 +1041,22 @@ class RedGuardTests(HookCase):
             "x=`: # `\nbash -c 'echo a # x \\\ngit commit -am x'",
             "(( y = ##a )); git commit -am x",
             "echo $(echo a)#x; git commit -am x",
+            "=git commit -am x",
+            "{=git commit -am x}",
+            "env =git commit -am x",
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
             self.assertIn("boom", err)
+        for command, reason in (
+            ("(( ${x/)/} + ##a )); git commit -am x", "bash and zsh"),
+            ("(( y = ##' )); git commit -am x # '", "bash and zsh"),
+            ("setopt nonomatch; echo x(N)#y; git commit -am x", "bash and zsh"),
+            ('echo `: "`; git commit -am x; echo "x"', "leaves a quote open"),
+        ):
+            code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn(reason, err, command)
         for command in (
             """echo "$(f() case x in a) echo "'";; esac)"; git commit -am x; echo "'\"""",
             """echo "$(case x { x) echo a;; })"; git commit -am x; echo ")\"""",

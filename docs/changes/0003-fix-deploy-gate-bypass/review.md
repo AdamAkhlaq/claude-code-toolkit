@@ -1,7 +1,7 @@
 ---
 id: "0003"
 slug: "fix-deploy-gate-bypass"
-reviewed: a6f928f0b6357658cf4f8653505f2e4c690406bb
+reviewed: 19f6f8b646fd20d345bd99a1501c60f3201ab214
 created: "2026-10-24"
 ---
 
@@ -366,6 +366,41 @@ Three passes from `REVIEW.md` over the delta `28f3cbb...a6f928f`, which holds th
 - The six Importants go to a new ticket, T15, appended with `/toolkit:tickets`; each finding stays open until T15 is done. (maintainer, "New ticket T15")
 - The four Nits are folded into T15, which touches the same README and CHANGELOG paragraphs. (maintainer, "Fold into T15")
 - Three findings come from a scan deciding where a span ends without stepping over what the shells step over there, the same kind raised in earlier rounds of this review (the `parentheses_balance` quote finding, `closing_paren`'s heredoc finding). `CLAUDE.md` gains a line: a scan that decides where a span ends steps over exactly the constructs each shell steps over there, probed with each one holding the closing character, in bash and zsh. (maintainer, "Add the line")
+
+### Waivers
+
+<none yet>
+
+## Review 2026-11-01 of 19f6f8b
+
+Three passes from `REVIEW.md` over the delta `a6f928f...19f6f8b`, which holds the ninth round's doc commits, the T15 ticket and T15, each in its own context. Every bypass below was re-run against the hooks at `19f6f8b` and at `a6f928f`, in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git`. One is a regression from T15: the `((` arithmetic branch now needs a word start, so a `((` glued to a reserved word or to zsh's `{` is no longer read as arithmetic, and a `<<` inside it is read as a heredoc that hides the lines after it. Two more were already open at `a6f928f`, in the families T15 worked on: a `]` inside a `$(...)` nested in `$[...]`, and a `(` at the start of an argument word, which zsh reads as a glob group. The fourth is a T15 acceptance line left unmet. The frontmatter's `reviewed:` now names this round's head.
+
+### Important
+
+- [ ] hooks/scripts/\_common.py:715 The `((` branch runs only when `starts_word` holds, so a `((` straight after a reserved word, as in `if((`, `while((`, `until((`, `for((` and `!((`, or after zsh's word-starting `{`, falls through to the glob-group kind. A `<<` inside it is then read as a heredoc, and a quote inside it pairs with a later one. `if((x=1<<E));then :;fi`, newline, `git tag v1`, newline, `E`, and its `while((`, `for((` and `!((` forms pass `deploy-gate`, and bash runs the tag; `a6f928f` blocked all four. `{((x=1<<E))}` in the same shape passes, and zsh runs it, also blocked at `a6f928f`. `{(( 1 ' )); git tag v1; } # '`, its `"`, `{{((`, `{(( 1 ' ))};`, `repeat 1 {((` and `f(){((` forms pass, and zsh runs the tag; those were open at `a6f928f` too. `is_git_commit` is False on every commit form. Fix: take a `((` as a candidate for arithmetic wherever bash or zsh can open one, after a word start, a reserved word or a run of `{`, and test the forms in both shells. (bugs, security)
+- [ ] hooks/scripts/\_common.py:748 `brackets` is a bare counter, so a `]` inside a `$(...)` nested in `$[...]` closes the `$[`, and the `#` of `##a` after it is read as a comment. `echo $[ $(: ]; echo 1) + ##a ]; git tag v1` passes `deploy-gate`, and zsh runs the tag; `a6f928f` misses it too. `arithmetic_end(command, index + 1, "[]")` at line 743 finds the right `]` and drops it. Fix: push `$[` onto `parens` as arithmetic, so only its own `]` pops it, or keep the index `arithmetic_end` returns. (bugs)
+- [ ] hooks/scripts/\_common.py:728 A `(` that starts an argument word, or a word inside `[[ ]]`, is a glob group to zsh, but it gets kind `""`, so its `)` starts a word and a `#` after it, or after `|` inside it, is read as a comment. `[[ a == (a)#y ]]; git tag v1` and `[[ a == (a|#b) ]]; git tag v1` (no option needed), `setopt nonomatch; echo (a|#b); git tag v1`, `echo ((a)|b)#y; ...`, `print -r -- (N)#y; ...` and `setopt extendedglob nonomatch; echo (#i)x; ...` pass `deploy-gate`, and zsh runs the tag; `a6f928f` misses them too. `is_git_commit` is False on the commit forms. Fix: give a word-start `(` outside command position, after a word of the same simple command or inside `[[ ]]`, the glob kind, so a `#` inside it or straight after its `)` raises ShellsDiffer. (security)
+- [ ] hooks/scripts/deploy_gate.py:11 The docstring's "a `'...'` span or an unbalanced bracket after `$$` inside double quotes" ties the `'...'` reason to `$$`, but `_common.py:952` raises it for a `'...'` span inside a double-quoted `${...}`: `echo "${x:-'}'}"` blocks with no `$$`, and `echo "$$'a}'"` passes. T15's Acceptance asked the docstring to name every reason. Fix: "a `'...'` span inside a double-quoted `${...}` holding a character that changes where it ends, an unbalanced bracket after `$$` inside double quotes", as `CHANGELOG.md:9` puts it. (compliance)
+
+### Nits
+
+- hooks/scripts/\_common.py:672 Since `brackets` ignores nesting, the new quote check fires on a quote inside a `$(...)` nested in `$[...]`: `echo $[ $(echo "1") + 1 ]`, which both shells accept, is blocked by every hook, an over-block the tickets gate did not accept. Fix: the stack fix for line 748, so the check sees the nested `$(...)`. (bugs)
+- hooks/scripts/red_guard.py:78 `only_bookkeeping` still uses `os.path.basename`, so `=git status` is not bookkeeping and red-guard runs the full check. Safe, but it contradicts the claim that `program_name` is used wherever a program name is tested. Fix: `program_name(words[0])`. (bugs, compliance)
+- hooks/scripts/\_common.py:984 The `CASE_IN_SUBSTITUTION` message says "inside a substitution", while the README and CHANGELOG now say "a `$(...)`, `<(...)` or `>(...)` span". Accurate, worded apart. Fix: say the same in the message. (compliance)
+
+0 Nits dropped.
+
+### Out of pass
+
+- No test covers a `((` straight after a reserved word or `{`, which is how the regression passed 89 green tests.
+- `=git${x} tag v1` passes, and zsh runs it. It falls under the documented limit on a word built from a variable, as `git${x}` does.
+- No pull request exists yet, so its statement of merge danger could not be checked.
+
+### Decisions
+
+- The four Importants go to a new ticket, T16, appended with `/toolkit:tickets`; each finding stays open until T16 is done. (maintainer, "New ticket T16")
+- The three Nits are folded into T16, which works the same code paths. (maintainer, "Fold into T16")
+- The regression came from tightening a match without probing it glued to a reserved word or in argument position, a position slip of the kind earlier rounds found after `{`. `CLAUDE.md`'s reader-step line now also names straight after a reserved word with no space between (`if((`, `!((`) and both command and argument position. (maintainer, "Extend the line")
 
 ### Waivers
 

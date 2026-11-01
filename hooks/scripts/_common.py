@@ -602,8 +602,9 @@ def substitution_holds(command: str, opens: list, settled: list, index: int) -> 
     return False
 
 
-WORD, ARITHMETIC, ARRAY = "word", "arithmetic", "array"
+WORD, ARITHMETIC, ARRAY, GLOB = "word", "arithmetic", "array", "glob"
 HASH_AFTER_ARRAY = "bash and zsh read a `#` straight after an array's `)` differently: bash as part of the word, zsh as a comment"
+HASH_IN_GLOB = "bash and zsh read a `#` inside or straight after a `(...)` that opens in the middle of a word, such as `x(N)#y`, differently: zsh as part of the word's glob group, bash as a syntax error"
 
 
 def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
@@ -613,9 +614,11 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
     `${...}` and arithmetic, so `a\\ #b`, `${x/ #/}` and `(( ##a ))` do not,
     and the `)` of `$(...)`, `<(...)`, `>(...)` or `$((...))` does not end a
     word, so `$(a)#b` does not either. A `#` straight after an array's `)`,
-    part of the word to bash and a comment to zsh, raises ShellsDiffer. A
-    `((` is arithmetic where `closing_paren` would read it so, and a `<<`
-    inside it or `$[...]` is a shift, not a heredoc. Since a `case`
+    part of the word to bash and a comment to zsh, raises ShellsDiffer, and so
+    does one inside or straight after a `(...)` that opens in the middle of a
+    word, a glob group to zsh and a syntax error to bash. A `((` is arithmetic
+    where `arithmetic_end` reads it so, a quote inside it or `$[...]` raises
+    ShellsDiffer, and a `<<` there is a shift, not a heredoc. Since a `case`
     pattern's `)` would close a parenthesis it does not open, a `case` inside
     a `$(...)`, `<(...)` or `>(...)` span raises Unmodelled. A heredoc whose closing
     line never comes keeps its body, so a missing delimiter cannot hide the
@@ -627,7 +630,8 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
     script is appended to `spans` when it is a list. A backtick span ends at
     its first unescaped backtick, as both shells end it before reading what
     is inside; its script, from `backtick_script`, is appended to `spans` and
-    its own reading kept in place of its text.
+    its own reading kept in place of its text, and a reading that leaves a
+    quote open raises Unclosed, since that quote would pair with a later one.
 
     A backslash-newline inside single quotes or `$'...'` is kept, as the
     shells keep it; in a backtick span `backtick_script` has already deleted
@@ -665,6 +669,8 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
         if quote:
             if char == quote:
                 quote = ""
+        elif (arithmetic or brackets) and (char in "'\"" or char == "$" and command.startswith("'", dollar_run(command, index))):
+            raise ShellsDiffer(QUOTE_IN_ARITHMETIC)
         elif char == "$" and command[index + 1 : index + 2] in ("$", "'"):
             end = dollar_run(command, index)
             close = ansi_c_span(command, index)
@@ -686,6 +692,8 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             continue
         elif char == "'":
             quote = char
+        elif char == "#" and starts_word and not braces and parens and parens[-1] == GLOB:
+            raise ShellsDiffer(HASH_IN_GLOB)
         elif char == "#" and starts_word and not braces and not arithmetic and not brackets:
             end = command.find("\n", index)
             if end != -1 and comment_continues(command, index, end):
@@ -704,7 +712,7 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             braces -= 1
         elif char == "(" and not braces:
             before = command[index - 1 : index]
-            if command.startswith("((", index) and (before == "$" or not arithmetic) and arithmetic_at(command, index + 1, matches):
+            if command.startswith("((", index) and (before == "$" or starts_word and not arithmetic) and arithmetic_end(command, index + 1, matches=matches) is not None:
                 parens.extend([WORD if before == "$" else "", ARITHMETIC])
                 words += before == "$"
                 kept.append("((")
@@ -715,14 +723,16 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
                 parens.append(WORD)
             elif arithmetic:
                 parens.append(ARITHMETIC)
+            elif parens and parens[-1] == GLOB or not starts_word and before != "=" and not command.startswith(")", index + 1):
+                parens.append(GLOB)
             else:
                 parens.append(ARRAY if before == "=" else "")
             words += parens[-1] == WORD
         elif char == ")" and parens and not braces:
             kind = parens.pop()
             words -= kind == WORD
-            if kind == ARRAY and command.startswith("#", index + 1):
-                raise ShellsDiffer(HASH_AFTER_ARRAY)
+            if kind in (ARRAY, GLOB) and command.startswith("#", index + 1):
+                raise ShellsDiffer(HASH_AFTER_ARRAY if kind == ARRAY else HASH_IN_GLOB)
             kept.append(char)
             at_word_start = kind in ("", ARITHMETIC)
             index += 1
@@ -730,6 +740,7 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
         elif words and not braces and char == "c" and keyword_position(command, index, 0) and word_at(command, index, "case"):
             raise Unmodelled(CASE_IN_SUBSTITUTION)
         elif command.startswith("$[", index):
+            arithmetic_end(command, index + 1, "[]")
             brackets += 1
             kept.append("$[")
             index += 2
@@ -762,13 +773,36 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             script = backtick_script(command[index + 1 : end])
             if spans is not None:
                 spans.append(script)
-            kept.append("`" + shell_source(script) + command[end : end + 1])
+            reading = shell_source(script)
+            if quote_left_open(reading):
+                raise Unclosed(QUOTE_IN_BACKTICKS)
+            kept.append("`" + reading + command[end : end + 1])
             index = end + 1
             continue
         kept.append(char)
         at_word_start = not quote and char in WORD_START
         index += 1
     return "".join(kept)
+
+
+QUOTE_IN_BACKTICKS = "a backtick span whose script leaves a quote open"
+
+
+def quote_left_open(reading: str) -> bool:
+    """True when the reading `shell_source` gives ends inside a quote: kept in place of a backtick span, its open quote would pair with a later one in the call and hide the text between."""
+    index = 0
+    while index < len(reading):
+        char = reading[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char in "'\"":
+            end = reading.find("'", index + 1) if char == "'" else escaped_close(reading, index + 1, '"')
+            if end == -1 or end >= len(reading):
+                return True
+            index = end
+        index += 1
+    return False
 
 
 def double_quoted(command: str, index: int, spans=None) -> tuple:
@@ -969,14 +1003,15 @@ def closing_paren(command: str, start: int) -> int:
     before `{` as opening one. Double-quoted text is read by `double_quoted`,
     so a substitution nested in it keeps its own quotes. A `((` whose inner
     `(` closes just before the outer `)` is arithmetic, as bash reads `$((`
-    and `((`, and so is `$[...]`: a `<<` there is a shift, and `<<<` is a
-    here-string, never a heredoc. A `((` that is not arithmetic is read twice,
+    and `((`, and so is `$[...]`, as `arithmetic_end` reads them, raising
+    ShellsDiffer where bash and zsh part: a `<<` there is a shift, and `<<<`
+    is a here-string, never a heredoc. A `((` that is not arithmetic is read twice,
     so each answer is cached: without that, nesting such a span in double
     quotes doubles the reading at every level.
     """
     if command.startswith("((", start):
-        end = arithmetic_close(command, start + 1)
-        if command.startswith(")", end + 1):
+        end = arithmetic_end(command, start + 1)
+        if end is not None:
             return end + 1
     depth = 0
     pending = []
@@ -1004,7 +1039,7 @@ def closing_paren(command: str, start: int) -> int:
             index = end - 1 if command.startswith("{", end) else end
             continue
         elif command.startswith("$[", index):
-            index = arithmetic_close(command, index + 1, "[]")
+            index = arithmetic_end(command, index + 1, "[]")
         elif command.startswith("${", index):
             end = parameter_close(command, index + 2)
             if not parentheses_balance(command, index + 2, end):
@@ -1031,8 +1066,8 @@ def closing_paren(command: str, start: int) -> int:
             index = heredoc[0]
             continue
         elif char == "(":
-            arithmetic = arithmetic_close(command, index + 1) if command.startswith("((", index) else None
-            if arithmetic is not None and command.startswith(")", arithmetic + 1):
+            arithmetic = arithmetic_end(command, index + 1) if command.startswith("((", index) else None
+            if arithmetic is not None:
                 index = arithmetic + 1
             else:
                 depth += 1
@@ -1052,67 +1087,92 @@ def keyword_position(command: str, index: int, start: int) -> bool:
     return before > start and command[before - 1] in METACHARACTERS
 
 
-def arithmetic_at(command: str, start: int, matches: dict) -> bool:
-    """True when the `((` whose inner `(` is at `start` is arithmetic, as `closing_paren` decides: that `(` closes just before a `)`.
+QUOTE_IN_ARITHMETIC = "bash and zsh read a quote inside arithmetic differently: bash as a quote, zsh as a character"
+PARAMETER_IN_ARITHMETIC = "bash and zsh end arithmetic holding a `${...}` with a parenthesis or bracket at different places: bash 3.2 counts it, zsh reads the `${...}` whole"
 
-    `matches` holds the close of each `(` already found, so a run of `((`
-    is scanned once rather than once for each.
+
+def arithmetic_end(command: str, start: int, pair: str = "()", matches=None):
+    """The index of the bracket that closes the arithmetic `(`, or `[` with `pair` `[]`, at `start`, or None when the `((` holding that `(` is not arithmetic.
+
+    A `((` is arithmetic when its inner `(` closes just before a `)`, as
+    bash reads `((` and `$((`, and `$[` always is. bash and zsh read two
+    things there apart: a quote, which is a quote to bash and a character to
+    zsh, and a bracket inside `${...}`, which bash 3.2 counts and zsh does
+    not. So a quote in arithmetic either shell reads raises ShellsDiffer, and
+    so does a `${...}` that makes the two readings end it at different places.
+    `matches` keeps each reading's scans, so a run of `((` is read once.
     """
-    if start not in matches:
+    matches = {} if matches is None else matches
+    bash, quoted, parameter = bracket_close(command, start, pair, False, matches)
+    zsh, zsh_quoted = (bash, False) if not (quoted or parameter) else bracket_close(command, start, pair, True, matches)[:2]
+    in_bash = pair == "[]" or command.startswith(")", bash + 1)
+    in_zsh = pair == "[]" or command.startswith(")", zsh + 1)
+    if (quoted or zsh_quoted) and (in_bash or in_zsh):
+        raise ShellsDiffer(QUOTE_IN_ARITHMETIC)
+    if in_bash != in_zsh or in_bash and bash != zsh:
+        raise ShellsDiffer(PARAMETER_IN_ARITHMETIC)
+    return bash if in_bash else None
+
+
+def bracket_close(command: str, start: int, pair: str, zsh: bool, matches: dict) -> tuple:
+    """(the index of the bracket that closes the one at `start`, or the end of `command`; whether a quote comes before it; whether a `${` does), as bash reads arithmetic or, with `zsh`, as zsh does.
+
+    Brackets count unless escaped or in a substitution. bash takes a quote as
+    a quote and counts brackets inside `${...}`; zsh takes a quote as a
+    character and reads `${...}` whole. One scan records the close of every
+    bracket it meets, and where each quote and `${` is, in `matches`.
+    """
+    closes, quotes, parameters = matches.setdefault((pair, zsh), ({}, [], []))
+    if start not in closes:
         opens = []
+        braces = 0
         index = start
         while index < len(command):
             char = command[index]
             if char == "\\":
                 index += 2
                 continue
-            if char == "'":
-                end = command.find("'", index + 1)
-                index = len(command) if end == -1 else end
-            elif char == '"':
-                index = double_quoted(command, index + 1)[0]
+            if char in "'\"" or command.startswith("$'", index):
+                bisect.insort(quotes, index)
+                if zsh:
+                    pass
+                elif char == "$":
+                    close = ansi_c_span(command, index)
+                    index = len(command) if close is None else close
+                elif char == "'":
+                    end = command.find("'", index + 1)
+                    index = len(command) if end == -1 else end
+                else:
+                    index = double_quoted(command, index + 1)[0]
             elif char == "`":
                 index = escaped_close(command, index + 1, "`")
             elif command.startswith("$(", index):
                 index = closing_paren(command, index + 1)
-            elif char == "(":
+            elif command.startswith("${", index):
+                bisect.insort(parameters, index)
+                if zsh:
+                    braces += 1
+                    index += 2
+                    continue
+            elif braces:
+                braces -= char == "}"
+            elif char == pair[0]:
                 opens.append(index)
-            elif char == ")":
-                matches[opens.pop()] = index
+            elif char == pair[1] and opens:
+                closes[opens.pop()] = index
                 if not opens:
                     break
             index += 1
         for unclosed in opens:
-            matches[unclosed] = len(command)
-    return command.startswith(")", matches[start] + 1)
+            closes[unclosed] = len(command)
+    close = closes[start]
+    return close, holds(quotes, start, close), holds(parameters, start, close)
 
 
-def arithmetic_close(command: str, start: int, pair: str = "()") -> int:
-    """The index of the bracket that closes the arithmetic `(`, or `[` with `pair` `[]`, at `start`, or the end of `command`: brackets count unless quoted, escaped or in a substitution."""
-    depth = 0
-    index = start
-    while index < len(command):
-        char = command[index]
-        if char == "\\":
-            index += 2
-            continue
-        if char == "'":
-            end = command.find("'", index + 1)
-            index = len(command) if end == -1 else end
-        elif char == '"':
-            index = double_quoted(command, index + 1)[0]
-        elif char == "`":
-            index = escaped_close(command, index + 1, "`")
-        elif command.startswith("$(", index):
-            index = closing_paren(command, index + 1)
-        elif char == pair[0]:
-            depth += 1
-        elif char == pair[1]:
-            depth -= 1
-            if depth == 0:
-                return index
-        index += 1
-    return len(command)
+def holds(positions: list, start: int, end: int) -> bool:
+    """True when the sorted `positions` hold one between `start` and `end`."""
+    found = bisect.bisect_right(positions, start)
+    return found < len(positions) and positions[found] < end
 
 
 def parentheses_balance(command: str, index: int, end: int) -> bool:
@@ -1189,11 +1249,12 @@ def is_operator(token: str) -> bool:
 def find_commit(tokens: list):
     """The `-C` directories of the first `git commit` in `tokens`, or None when there is none.
 
-    `git` is matched by basename, so `/usr/bin/git` counts, and the script of
-    `bash -c` or `eval` is searched too, so rewording a commit cannot hide it.
+    `git` is matched by `program_name`, so `/usr/bin/git` and zsh's `=git`
+    count, and the script of `bash -c` or `eval` is searched too, so rewording
+    a commit cannot hide it.
     """
     for index, token in enumerate(tokens):
-        name = os.path.basename(token)
+        name = program_name(token)
         rest = tokens[index + 1 :]
         if name in SHELLS:
             script = shell_script(rest)
@@ -1218,6 +1279,11 @@ def find_commit(tokens: list):
         if rest and rest[0] == "commit":
             return dirs
     return None
+
+
+def program_name(word: str) -> str:
+    """The program `word` names, by basename, read past one leading `=`: zsh expands `=git` to the path of `git`, and bash has no program named `=git`."""
+    return os.path.basename(word[1:] if word.startswith("=") else word)
 
 
 def shell_script(words: list):

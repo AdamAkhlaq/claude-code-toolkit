@@ -5,11 +5,19 @@ authorised a release, either by exporting RELEASE_AUTHORIZED or by creating
 `.claude/.release-authorized`. Each pattern is matched against the whole
 command and against each simple command in it, anchored at every word that
 could name a program, so `^git tag ` also catches `cd . && git tag v1`,
-`sudo git tag v1` and zsh's `{git tag v1}`. A call too long or too deeply
-nested to read is blocked rather than half read, as is one bash and zsh read
-differently, one holding a double-quoted substitution that never closes, one
-holding a `case` inside a substitution, one holding a `#` comment ending in
-a backslash inside a substitution, and one whose backslash-newline would
+`sudo git tag v1`, zsh's `{git tag v1}` and zsh's `=git tag v1`. A call too
+long or too deeply nested to read is blocked rather than half read. So is
+one bash and zsh read differently: `$$'` before a backslash, a heredoc
+delimiter starting with `$"` or `$$'`, a `'...'` span or an unbalanced
+bracket after `$$` inside double quotes, a `${...}` with an unbalanced
+parenthesis inside a substitution, a quoted heredoc body holding a
+backslash-newline inside a substitution, a quote inside arithmetic or a
+`${...}` that makes the shells end arithmetic apart, and a `#` straight
+after an array's `)` or inside or straight after a glob group such as
+`x(N)`. So is one that never closes: a double-quoted substitution or
+`${...}`, or a backtick span whose script leaves a quote open. So is one the
+reader does not model: a `case`, or a `#` comment ending in a backslash,
+inside a `$(...)`, `<(...)` or `>(...)` span, and a backslash-newline that would
 change where a quote, substitution, heredoc or comment ends.
 A script fed to an interpreter, such as `echo 'git tag v1' | bash`, is not
 read, nor is a word built from a variable, such as `git $t v1`.
@@ -19,7 +27,7 @@ import os
 import re
 import sys
 
-from _common import BRACES, SHELLS, ShellsDiffer, Unclosed, Unmodelled, Unreadable, backtick_script, block, closing_paren, dollar_run, git_options, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
+from _common import BRACES, SHELLS, ShellsDiffer, Unclosed, Unmodelled, Unreadable, backtick_script, block, closing_paren, dollar_run, git_options, is_operator, load_config, program_name, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
 
 MARKER_RELPATH = ".claude/.release-authorized"
 
@@ -71,7 +79,7 @@ def readings(command: str, budget=None, seen=None) -> list:
         for index, word in enumerate(words):
             end = offset + len(word) + 1
             if word and not word.startswith("-") and not any(char.isspace() for char in word):
-                name = os.path.basename(word)
+                name = program_name(word)
                 starts.append(offset + len(word) - len(name))
                 if name == "git":
                     after = git_options(words[index + 1 :])[1]

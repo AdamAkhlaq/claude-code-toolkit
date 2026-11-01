@@ -12,7 +12,9 @@ files:
     docs/backlog.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_backticks_brace_groups_and_arithmetic_are_read_as_the_shells_read_them: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `` echo `bash -c ''echo a # x \\` / `git tag v1''` ``, `` echo "`bash -c ''echo a # x \\` / `git tag v1''`" ``, `` x=`: # ` / `bash -c ''echo a # x \` / `git tag v1''` ``, `` `# ` / `eval ''echo a # x \` / `git tag v1''` ``, `(( y = ##a )); git tag v1`, `echo $(( ##a )); git tag v1`, `echo $[ ##a ]; git tag v1`, `{git tag v1}`, `true&&{git tag v1}`, `if {git tag v1}; then :; fi` and `echo "$({git tag v1})"` (lines joined by a newline); exits 2 naming a `case` on `echo "$({case x in x) echo ")"; git tag v1; echo "(" ;; esac})"`; and exits 0 silently on `` x=`echo a # note` ``, `` echo `echo ''a\` / `b''` ``, `find . -name x -exec echo {} \;`, `echo $(( 16#ff ))` and `echo a \` / `# c` / `ls`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `{git commit -am x}`, `` echo `bash -c ''echo a # x \\` / `git commit -am x''` `` and `` x=`: # ` / `bash -c ''echo a # x \` / `git commit -am x''` ``'
-status: todo
+status: done
+executed_by: single
+branch: ticket/0003-T14
 ---
 
 ## Context
@@ -67,6 +69,13 @@ Add every member that gets past a hook to the proving test before the fix. Probe
 
 Existing assertions this may change: T13's blocked group at `tests/test_hooks.py:519` (``echo `echo a # x \``, ...) asserts only "Blocked" and should still block, now for release authorisation. Any other existing assertion that changes is listed in the Evidence, with the reason.
 
+Amended by the executor, 2026-10-31: the family checks found more members than the review listed. All are fixed here and in the proving test, and each gets past the hooks at `28f3cbb`, apart from the one regression guard named below:
+
+- **`#` straight after a substitution's `)`.** The `)` of `$(...)`, `<(...)`, `>(...)` or `$((...))` does not end a word in either shell, but `source_text` started a word there, so `echo $(echo a)#x; git tag v1`, `cat <(echo a)#x; ...`, `x=$(echo a)#x; ...`, `echo $((1))#x; ...` and ``echo `echo a`#x; ...`` read `#x; git tag v1` as a comment, and both shells run the tag. This is the same `#` word-start step as the arithmetic Important, so it is fixed with it: `source_text` keeps a stack of open parentheses, with the kind each closes. After a substitution's `)` the word goes on; after a subshell's, a command `((...))`'s or `f()`'s a word starts, as the shells read it. After an array's `)`, `a=(b)#x` is part of the word to bash and a comment to zsh, so a `#` there raises ShellsDiffer.
+- **A `((` that is not arithmetic.** `source_text` took every `((` as arithmetic. Under the new arithmetic rule that would have hidden the comment in `((echo a) # it's`, newline, `); git tag v1; echo "'"`, a regression, and it already hid a heredoc: `echo $((cat <<EOF`, newline, `it's`, newline, `EOF`, newline, `) ); git tag v1; echo "'"` passes at `28f3cbb` and zsh runs the tag. A `((` is now arithmetic only where `closing_paren` would read it so (`arithmetic_at`, which caches each close so a run of `((` is scanned once), and a `$(` inside arithmetic is still a substitution.
+- **A `case` inside an unquoted substitution.** A `case` pattern's `)` would pop a parenthesis it did not push, so `source_text` raises `Unmodelled(CASE_IN_SUBSTITUTION)` on a `case` inside a `$(...)`, `<(...)` or `>(...)` span, which T13's decision 1a already called for. This replaces "Do not add a block" in the `README.md:76` Nit above: `cat <(case x in x) echo hi;; esac)` and `x=$(case $1 in a) echo A;; esac)` now block in every hook, so the README sentence is true as written.
+- **zsh's brace group** also hides `{\git tag v1}`, `{'git' tag v1}`, `{"git" tag v1}`, `{$'git' tag v1}`, `{ {git tag v1} }`, `a(){git tag v1}; a`, `zsh -c '{git tag v1}'` and `` echo `{git tag v1}` ``. The split runs on words after quote removal, so a quoted brace is split too; a word holding whitespace, which only quotes make, is left whole so a `zsh -c` script stays one word.
+
 ## Acceptance
 
 - The proving test passes.
@@ -79,3 +88,90 @@ Existing assertions this may change: T13's blocked group at `tests/test_hooks.py
 - `CHANGELOG.md` and the README's `deploy-gate` paragraph describe the backtick, brace-group and arithmetic reading, and the five Nits are fixed as Context says.
 
 ## Evidence
+
+### Evidence 2026-10-31 20:19
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+........................................................................................
+----------------------------------------------------------------------
+Ran 88 tests in 23.163s
+
+OK
+```
+
+Before fixing, each family in Context was checked in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git` that prints to stderr. Every form that got past a hook went into the proving test, which was committed failing (3766939). It failed first on `` echo `bash -c 'echo a # x \\ ``, newline, `` git tag v1'` ``, where the gate exited 0, and red-guard failed on `{git commit -am x}`, which also exited 0. The members in the Context amendment turned up while fixing. They were added to the test in the fix commit, and each one gets past the hooks at `28f3cbb`, apart from `((echo a) # it's`, newline, `); git tag v1; echo "'"`, which is a guard against a regression found mid-fix.
+
+Shell facts behind the fix, from the probes:
+
+- **Backticks.** Both shells end a backtick span at its first unescaped backtick before reading the text inside, so `` x=`: # ` `` ends its comment at the backtick. The one-pass unescape was compared with both shells for one to five backslashes before a newline, a `$`, a `"`, the end of the span and an escaped nested backtick. The contexts were unquoted, single quotes, double quotes, `$'...'` and `$x`, with the span bare and inside `"..."`. Every real context matched. The only mismatches were harness artifacts: a trailing backslash escaping the harness's own `)`, and three backslashes leaving a nested backtick unescaped.
+- **Brace groups.** zsh opens a brace group at a `{` stuck to a command word and closes it at a `}` that ends a word. `{prog a}`, `true&&{prog a}`, `if {prog a}; then :; fi` and `{x=1 prog a}` all run `prog`. `{echo a}b}` prints `a}b` and `{echo {} a}` prints `{} a`. `}case` and `!case` are not keywords.
+- **`#` after brackets.** After the `)` of `$(...)`, `<(...)` or `$((...))`, and after `$[...]`, a `#` is part of the word. After a subshell, a command `((...))`, `f()` or a `case` pattern it starts a comment. After `a=(b)`, bash reads it as part of the word and zsh as a comment.
+
+The fix:
+
+- **`backtick_script`** makes a span's script in one pass from the left: it takes the backslash off `\\`, `` \` ``, `\$`, and `\"` inside double quotes, and deletes each backslash-newline.
+- **`source_text`** ends an unquoted backtick span with `escaped_close`, appends its script to `spans`, and keeps the script's own `shell_source` reading in place of its text, so the commit hooks still see a commit inside it. `deploy-gate` steps over backtick spans in that text (`substitutions(..., backticks=False)`), so a script is not unescaped twice. The `backtick` flag and its branches are gone. Because both readings can now hold a `\` and newline that `backtick_script` leaves in single quotes, the agreement check in `shell_source` compares the two readings with their own backslash-newlines deleted on both sides (`flattened`).
+- **The bracket stack.** `source_text` keeps a stack of open parentheses that replaces the `arithmetic` counter, and no comment opens inside arithmetic or `$[...]`. A deleted backslash-newline keeps the word-start state, so `echo a \`, newline, `# c`, newline, `ls` is read as the shells read it.
+- **`brace_group_words`** splits a zsh brace group's `{` and `}` off the words `shell_tokens` returns. It keeps `{}` whole and leaves a word holding whitespace alone.
+- **`keyword_position`** counts a run of `{` before `case`, in `closing_paren` and in `source_text`.
+
+**Docs.** The `deploy_gate.py` docstring names every reason, and the `docs/backlog.md` line about it is gone. CHANGELOG and README describe the backtick, brace-group, arithmetic and `#` reading. The five Nits are fixed as Context says, with the fourth fixed through the amendment above.
+
+No existing assertion changed. T13's blocked case at `tests/test_hooks.py:519` still blocks, now for release authorisation.
+
+Probe sweeps on the final code:
+
+- **Probe files.** The family, boundary, `#`-after-bracket and arithmetic files hold 224 forms. None gets past the gate. Every commit-hook miss left is inside a double-quoted substitution, the gap `docs/backlog.md` keeps for its own change.
+- **Earlier corpora.** The 657 cases from 0003's earlier sweeps, compared with `28f3cbb`, give 2 misses. Both are `eval` of a variable, the README's known limit, and both miss at `28f3cbb` too. One result changed, an over-block lifted: `` echo `cat <<'E'`` ... `` ` ``, which neither shell runs, is now allowed.
+
+**Timing** (gate and `is_git_commit`, at the fix against `28f3cbb`):
+
+- Every existing row is within 0.1 s of base.
+- New adversarial rows (100,000 `(`, 30,000 `((#`, 20,000 `$(a)#x`, 20,000 backtick spans, 30,000 `{a}`, 10,000 `((a) #x`) all finish under 0.5 s in the gate. `is_git_commit` is under 9 s, where the known `find_commit` cost dominates.
+- 30,000 nested `$((` now raise `RecursionError` in `is_git_commit` as well as in the gate (as at base), through `closing_paren` and `arithmetic_close`. It starts at about 1,000 levels, and every hook blocks on it, so it fails closed.
+- The T6, T7, T10, T11, T12 and T13 timing tests pass.
+
+`claude plugin validate .` passes, with the same `.DS_Store` warnings as before.
+
+Live check, 2026-10-31, on the final code. Headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` sessions ran one Bash call per command, with no `RELEASE_AUTHORIZED` and no marker. The first used a throwaway repo with `"gatedCommands": ["^git tag "]`:
+
+| Command | Result |
+| --- | --- |
+| `` echo `bash -c 'echo a # x \\ `` / `` git tag v1'` `` | blocked: matches `^git tag ` |
+| `{git tag v2}` | blocked: matches `^git tag ` |
+| `(( y = ##a )); git tag v3` | blocked: matches `^git tag ` |
+| `echo $(echo a)#x; git tag v4` | blocked: matches `^git tag ` |
+| `` x=`: # ` `` / `bash -c 'echo a # x \` / `git tag v5'` | blocked: matches `^git tag ` |
+| `echo "$({case x in x) echo ")"; git tag v6; echo "(" ;; esac})"` | blocked: "deploy-gate does not read a `case` inside a substitution ..." |
+| `` x=`echo a # note`; echo "x=$x" `` | ran: `x=a` |
+| `find . -name app.py -exec echo {} \;` | ran: `./app.py` |
+| `echo $(( 16#ff ))` | ran: `255` |
+| `echo a \` / `# c` / `echo live-ran` | ran: `a`, `live-ran` |
+
+The second used another throwaway repo with `"feedbackCommand": "echo boom-red; exit 1"` and a modified `app.py`:
+
+| Command | Result |
+| --- | --- |
+| `{git commit -am x}` | blocked: "Commit stopped: the feedback command is red." |
+| `echo $(echo a)#x; git commit -am x` | blocked: "Commit stopped: the feedback command is red." |
+| `` echo `bash -c 'echo a # x \\ `` / `` git commit -am x'` `` | blocked: "Commit stopped: the feedback command is red." |
+| `x=$(case x in a) echo A;; esac); echo "$x"` | blocked: "Blocked: red-guard could not read this Bash call (a `case` inside a substitution) ..." |
+| `` echo `echo 'a\ `` / `` b'` `` | ran: `ab` |
+
+No tag was created and nothing was committed in either repo.
+
+### Verifier 2026-11-01 10:24
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok. All frontmatter fields present, `status: in-progress`, Evidence quotes `python3 -m unittest discover -s tests` with exit 0.
+2. proving test present and meaningful: ok. `DeployGateTests.test_backticks_brace_groups_and_arithmetic_are_read_as_the_shells_read_them` and the six new cases in `RedGuardTests.test_reworded_commits_are_recognised` were added on this branch (test-only commit 3766939 before the fix 8a01bec). They drive `deploy_gate.py` and `red_guard.py` as subprocesses. Run against the integration branch's hooks with this branch's test file, both fail (`0 != 2 : echo \`bash -c 'echo a # x \\` and `0 != 2 : {git commit -am x}`). Per case, 50 of the 52 release-authorisation cases and all 3 `case` cases exit 0 at the base and 2 at the head; the other two blocked as Unmodelled at base, and `((echo a) # it's` blocked at base too (the regression guard the ticket names). Spot-checked in `/bin/bash` and `/bin/zsh` with a stub `git`: `{git tag v1}` runs the tag in zsh only, `(( y = ##a )); git tag v1`, `echo $(echo a)#x; git tag v1`, the backtick `\\` form and the `` x=`: # ` `` form run it in both, and `echo a \`, newline, `#c; git tag v1` runs only `echo a` in both, matching the test's allow case.
+3. proving test run: exit 0, `Ran 2 tests in 5.271s OK` (`python3 -m unittest tests.test_hooks.DeployGateTests.test_backticks_brace_groups_and_arithmetic_are_read_as_the_shells_read_them tests.test_hooks.RedGuardTests.test_reworded_commits_are_recognised`).
+4. feedback command: exit 0, `Ran 88 tests in 22.210s OK`.
+5. acceptance: 8 of 8 checked. Proving test passes (check 3). Other tests unchanged: the test diff is additions only, suite green. Timing cases: the `time.monotonic()` limits in `tests/test_hooks.py` pass within the suite. No `backtick` flag in `source_text` (grep finds none); an unquoted span ends at `escaped_close` and `backtick_script` unescapes and joins in one pass, as does the quoted path in `substitution_end`. `shell_tokens("{git tag v1}")` gives `{ git tag v1 }`, and `find . -exec echo {} \;` keeps `{}`. The comment branch is guarded by `not arithmetic and not brackets`, and `arithmetic_close` has no comment branch. The `deploy_gate.py` docstring names the case, comment, backslash-newline, unclosed, too-long and shells-differ reasons; the backlog line is gone. CHANGELOG and README describe the backtick, brace-group, arithmetic and `#` reading, and the five Nits are fixed (CHANGELOG clause, "zsh's" moved to `{case`, README "outside a backtick span", README case sentence true as amended, `skip_heredoc_bodies` docstring).
+6. scope: ok. Every changed file is in `files` or is the ticket itself.
+7. tests intact: ok. No assertion deleted, skipped or loosened.

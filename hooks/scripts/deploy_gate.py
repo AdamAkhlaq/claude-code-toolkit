@@ -4,12 +4,13 @@ Blocks any command matching a pattern in `gatedCommands` unless a human has
 authorised a release, either by exporting RELEASE_AUTHORIZED or by creating
 `.claude/.release-authorized`. Each pattern is matched against the whole
 command and against each simple command in it, anchored at every word that
-could name a program, so `^git tag ` also catches `cd . && git tag v1` and
-`sudo git tag v1`. A call too long or too deeply nested to read is blocked
-rather than half read, as is one bash and zsh read differently, one holding
-a double-quoted substitution that never closes, one holding a `case`
-inside a substitution, and one whose backslash-newline would change where
-a quote, substitution, heredoc or comment ends.
+could name a program, so `^git tag ` also catches `cd . && git tag v1`,
+`sudo git tag v1` and zsh's `{git tag v1}`. A call too long or too deeply
+nested to read is blocked rather than half read, as is one bash and zsh read
+differently, one holding a double-quoted substitution that never closes, one
+holding a `case` inside a substitution, one holding a `#` comment ending in
+a backslash inside a substitution, and one whose backslash-newline would
+change where a quote, substitution, heredoc or comment ends.
 A script fed to an interpreter, such as `echo 'git tag v1' | bash`, is not
 read, nor is a word built from a variable, such as `git $t v1`.
 """
@@ -18,7 +19,7 @@ import os
 import re
 import sys
 
-from _common import BRACES, SHELLS, ShellsDiffer, Unclosed, Unmodelled, Unreadable, block, closing_paren, dollar_run, git_options, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
+from _common import BRACES, SHELLS, ShellsDiffer, Unclosed, Unmodelled, Unreadable, backtick_script, block, closing_paren, dollar_run, git_options, is_operator, load_config, project_dir, read_event, shell_script, shell_source, shell_tokens, tool_input
 
 MARKER_RELPATH = ".claude/.release-authorized"
 
@@ -57,7 +58,7 @@ def readings(command: str, budget=None, seen=None) -> list:
     found = []
     bodies = []
     spans = []
-    inners = substitutions(shell_source(command, bodies, spans)) + spans
+    inners = substitutions(shell_source(command, bodies, spans), backticks=False) + spans
     for body in bodies:
         inners.extend(substitutions(body, quotes=False))
     for inner in inners:
@@ -165,7 +166,7 @@ def simple_commands(command: str) -> list:
     return found
 
 
-def substitutions(command: str, quotes: bool = True) -> list:
+def substitutions(command: str, quotes: bool = True, backticks: bool = True) -> list:
     """The command inside each `$(...)` and backtick span the shell runs in `command`, outside quotes and never after a backslash.
 
     `command` is `shell_source`'s text, which has already read each
@@ -173,8 +174,10 @@ def substitutions(command: str, quotes: bool = True) -> list:
     text there. With `quotes` false, as in a heredoc body, quote characters
     are literal. A run of `$` is read whole, so after `$$`, the PID, a `(` is
     literal. A backtick span ends at the first backtick not escaped, and its
-    inner text is read with `\\``, `\\$` and `\\\\` unescaped, as bash does, so a
-    nested backtick span is found when that text is read.
+    script is made by `backtick_script`, so a nested backtick span is found
+    when that script is read. With `backticks` false, as in `shell_source`'s
+    text, which has already put each backtick span's script in its spans, a
+    backtick span is stepped over.
     """
     found = []
     quote = ""
@@ -204,7 +207,8 @@ def substitutions(command: str, quotes: bool = True) -> list:
             while end < len(command) and command[end] != "`":
                 end += 2 if command[end] == "\\" else 1
             end = min(end, len(command))
-            found.append(re.sub(r"\\([\\`$])", r"\1", command[index + 1 : end]))
+            if backticks:
+                found.append(backtick_script(command[index + 1 : end]))
             index = end
         index += 1
     return found

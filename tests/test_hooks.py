@@ -775,6 +775,68 @@ class DeployGateTests(HookCase):
         ):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
 
+    def test_word_position_switches_only_where_the_shells_switch_it(self):
+        self.configure(gatedCommands=["^git tag "])
+        for command in (
+            "echo $(:;;)#; git tag v1",
+            "echo $(:;&)#; git tag v1",
+            "echo $(:;|)#; git tag v1",
+            "echo $(:;;&)#; git tag v1",
+            "cat <(:;;)#; git tag v1",
+            "echo $( (:;;) )#; git tag v1",
+            "echo $(echo a\n;;\n)#; git tag v1",
+            "case x in a) echo $(:;;)#y;; esac; git tag v1",
+            "time -p((x=1<<E))\ngit tag v1\nE",
+            "for i (a)((x=1<<E))\ngit tag v1\nE",
+            "foreach i (a)((x=1<<E));end\ngit tag v1\nE",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err, command)
+        redirections = (">", ">>", "<", ">|", ">&", "<&", "&>", "&>>", "<>", "<<<")
+        for command in (
+            "x=(a <<E)\ngit tag v1\nE",
+            "x=(<<E)\ngit tag v1\nE",
+            "x=(a <<-E)\ngit tag v1\nE",
+            "x=(a <<'E')\ngit tag v1\nE",
+            "x+=(a <<E)\ngit tag v1\nE",
+            "declare -a x=(a <<E)\ngit tag v1\nE",
+            "f() { local x=(a <<E); }\ngit tag v1\nE",
+            "x=(a\n<<E)\ngit tag v1\nE",
+            *(f"{op} (a|#b); git tag v1" for op in redirections),
+            *(f"{op}(a|#b); git tag v1" for op in redirections if op not in (">", "<")),
+            "echo x <<<(a|#b); git tag v1",
+            ">|(a)#y; git tag v1",
+            "cat <(echo a|#b); git tag v1",
+            "! < (N)#y; git tag v1",
+            "time &> (a|#b); git tag v1",
+            *(f"echo {span}echo a{op}#b); git tag v1" for span in ("$(", "<(", ">(") for op in (";", "|", "&", "&&", "||", ">", "<")),
+            "<(a|#b); git tag v1",
+            ">(a|#b); git tag v1",
+            "2>(a|#b); git tag v1",
+            "echo x >(a|#b); git tag v1",
+            "x=$(if true;then :;fi;#b); git tag v1",
+            "echo $( (echo a;#b) ); git tag v1",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("bash and zsh", err, command)
+        for command in (
+            "f() { (echo a # c\necho b) }",
+            "f () { (echo a; echo b # c\n) }",
+            "function f { (echo a # c\necho b) }",
+            "function f() { (echo a # c\necho b) }",
+            "f() ( (echo a # c\n) )",
+            "case x in (x) (echo a # c\necho b);; esac",
+            "case x in (x) echo a | (cat # c\n);; esac",
+            "case x in (x)\n(echo a # c\n);; esac",
+            "x=$(echo a; # note\n)",
+            "x=($(cat <<E\na\nE\n))",
+            "cat <(echo a) # c",
+            "diff <(a) <(b) # c",
+        ):
+            self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+
     def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
         self.configure(gatedCommands=["^git tag ", "^git push .*--force"])
         refs = " ".join(f"r{n}" for n in range(70))
@@ -1136,6 +1198,7 @@ class RedGuardTests(HookCase):
             "{=git commit -am x}",
             "env =git commit -am x",
             "if((x=1<<E));then :;fi\ngit commit -am x\nE",
+            "echo $(:;;)#; git commit -am x",
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
@@ -1144,6 +1207,7 @@ class RedGuardTests(HookCase):
             ("(( ${x/)/} + ##a )); git commit -am x", "bash and zsh"),
             ("(( y = ##' )); git commit -am x # '", "bash and zsh"),
             ("setopt nonomatch; echo x(N)#y; git commit -am x", "bash and zsh"),
+            ("> (a|#b); git commit -am x", "bash and zsh"),
             ('echo `: "`; git commit -am x; echo "x"', "leaves a quote open"),
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)

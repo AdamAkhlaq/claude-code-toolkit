@@ -12,7 +12,9 @@ files:
     docs/backlog.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_word_position_switches_only_where_the_shells_switch_it: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `echo $(:;;)#; git tag v1`, its `;&`, `;|` and `;;&` forms and `cat <(:;;)#; git tag v1`, and on `time -p((x=1<<E))`, `for i (a)((x=1<<E))` and `foreach i (a)((x=1<<E));end`, each followed by `git tag v1` and `E` on lines of their own; exits 2 naming bash and zsh on `x=(a <<E)` followed by `git tag v1` and `E` on lines of their own, `> (a|#b); git tag v1`, `! < (N)#y; git tag v1`, `>|(a)#y; git tag v1`, `>&(a|#b); git tag v1`, `echo x <<<(a|#b); git tag v1`, `<>(a|#b); git tag v1`, `echo $(echo a;#b); git tag v1`, `echo $(echo a|#b); git tag v1` and `cat <(echo a|#b); git tag v1`; and exits 0 silently on `f() { (echo a # c` newline `echo b) }`, `function f { (echo a # c` newline `echo b) }`, `case x in (x) (echo a # c` newline `echo b);; esac`, `case x in (x) echo a | (cat # c` newline `);; esac` and `x=$(echo a; # note` newline `)`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `echo $(:;;)#; git commit -am x` and `> (a|#b); git commit -am x`'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T17
 ---
 
 ## Context

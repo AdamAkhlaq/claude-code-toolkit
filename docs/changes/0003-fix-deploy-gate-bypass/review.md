@@ -1,7 +1,7 @@
 ---
 id: "0003"
 slug: "fix-deploy-gate-bypass"
-reviewed: f1448b55125e1a9a4b1d99729379c3667e2df0eb
+reviewed: c4dcb32c6b1102e674ba24f9fb0b45c79f17c413
 created: "2026-10-24"
 ---
 
@@ -444,6 +444,41 @@ Three passes from `REVIEW.md` over the delta `19f6f8b...f1448b5`, each in its ow
 - T16's widening that opens arithmetic at a `((` straight after a `)` stays, as decided now: T17 adds `for i (a)((x=1<<E))` and `foreach i (a)((x=1<<E));end`, each followed by `git tag v1` and `E` on lines of their own, to the proving test, and removes the backlog line. (maintainer, "Keep it, add test rows")
 - The five Nits are folded into T17, which works the same code and docs. (maintainer, "Fold into T17")
 - `case` state has now misfired in three rounds: the sixth and seventh, and this one's separator with no `case` open. `CLAUDE.md` gains a line: a reader state a token switches on holds only while its opening construct is open at that depth, and is probed where the opener is absent, inside a `$(...)` that holds none, across each bracket the reader pushes and pops, and on everyday forms that hold the state. (maintainer, "Add the line")
+
+### Waivers
+
+<none yet>
+
+## Review 2026-11-02 of c4dcb32
+
+Three passes from `REVIEW.md` over the delta `f1448b5...c4dcb32`, each in its own context: the eleventh round's record, the T17 ticket, T17 itself, its review ticks and the `REVIEW.md` commit. This is the first round under that commit's rules. A hook bypass is Important only in a form an agent could plausibly write, and only a defect the delta introduces blocks the merge. Every code finding below was re-run against the hooks at `c4dcb32` and at `f1448b5`, in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git`.
+
+The one Important is about scope, not code. The bugs and security passes found no plausible bypass and no false positive on an ordinary command. That covered about 45 and 23 everyday forms at head and base, 100,000 and 40,894 fuzzed inputs, and the 301 inputs newly allowed at head, each run in both shells. Two contrived bypasses that T17 opened are Nits.
+
+### Important
+
+- [x] 3b1810a REVIEW.md:19 Commit `c4dcb32` adds the Threat model section and changes the meaning of Important and Out of pass, under the trailer `Change: 0003`. But `intent.md` records no amendment for it, and no ticket lists `REVIEW.md` in its files. Every other widening of 0003 is recorded in the intent, and this one changes how every later review is graded, starting with this round. Fix: a dated amendment to `intent.md` recording the decision and who made it. (compliance)
+
+### Nits
+
+- hooks/scripts/\_common.py:923 The new `()` branch takes an empty `()` straight after a redirection operator, or while a redirection's target is pending, as a function definition, and puts the reader back in command position. zsh reads that `()` as the target. `setopt nonomatch; echo a >>() (a)#y; git tag v1`, its `<<()` form and `setopt nonomatch; >>()#b; git tag v1` pass `deploy-gate` and `is_git_commit`, and zsh runs the tag; `f1448b5` blocked all three. This is contrived under the threat model. Fix: leave out of that branch a `(` whose `before` is `<` or `>`, or one where `position.redirect` is pending. (security, bugs)
+- hooks/scripts/\_common.py:687 After `function NAME`, command position is kept for the next word, but zsh reads a `(` that starts a word there as another name, a glob. `setopt nonomatch; function f (a|#b) { :; }; git tag v1` passes, and zsh runs the tag; `f1448b5` blocked it. This is contrived. Fix: keep command position after the name only for `{` and `()`, so a `(` that starts the next word reads as a glob group. (bugs)
+- agents/reviewer.md:29 The reviewer agent still defines Important as "breaks behaviour, leaks data, breaches a policy, diverges from the spec", without "introduced by the delta" or the threat model, and line 41 uses Out of pass for another pass's territory. `skills/review/SKILL.md` has no step that writes the `docs/backlog.md` line `REVIEW.md` now promises for a pre-existing defect. The agent defers to `REVIEW.md`, so this round followed the new rules, but the components and the policy disagree. Fix: in a change of its own, since both are plugin components, make `reviewer.md` defer to `REVIEW.md`'s severity rules, and add the backlog step to the review skill. (compliance)
+
+0 Nits dropped.
+
+### Out of pass
+
+- `echo $( (#b) ); git tag v1` passes at `c4dcb32` and at `f1448b5`, and bash 3.2 runs the tag. A `#` straight after a subshell's `(` inside `$(...)` is read as a comment, but bash 3.2's span scanner reads it as part of a word there. It is pre-existing and contrived, so it gets a line in `docs/backlog.md`.
+- `x=$(cat <<E;#b`, then `a`, `E` and `); git tag v1` on lines of their own, now raises ShellsDiffer, though bash and zsh both run it: the `#` after `;` is on the heredoc's own line. This is a contrived form that fails closed, so it gets a note only.
+- No pull request exists yet, so its statement of merge danger could not be checked.
+
+### Decisions
+
+- The Important is fixed now: `intent.md` gains a dated amendment recording the severity decision and who made it, in `3b1810a`. (maintainer, "Fix now")
+- The two contrived bypasses T17 opened, an empty `()` after a redirection and a `(` after `function NAME`, go to `docs/backlog.md` rather than a code change, so 0003 ships without a new delta. (maintainer, "Backlog them")
+- Bringing `agents/reviewer.md` and the review skill in line with `REVIEW.md` goes to `docs/backlog.md`, for the follow-up change that also checks the differential probe corpus in as a test. (maintainer, "Backlog, next change")
+- A decision that reshapes a change outside a gate has now gone unrecorded twice: the `((` after a `)` in the eleventh round, and the `REVIEW.md` rules in this one. `CLAUDE.md` gains a line to record such a decision as a dated amendment in the change's intent in the same commit. (maintainer, "Add the line")
 
 ### Waivers
 

@@ -684,6 +684,97 @@ class DeployGateTests(HookCase):
         ):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
 
+    def test_arithmetic_and_glob_groups_open_wherever_the_shells_open_them(self):
+        self.configure(gatedCommands=["^git tag "])
+        for head in (
+            "if((x=1<<E));then :;fi",
+            "while((0<<E));do :;done",
+            "for((i=0;i<1<<E;i++));do :;done",
+            "!((0<<E))",
+            "{((x=1<<E))}",
+            "until((1<<E));do :;done",
+            "if true;then :;elif((x=1<<E));then :;fi",
+            "if true;then((x=1<<E));fi",
+            "if false;then :;else((x=1<<E));fi",
+            "for i in a;do((x=1<<E));done",
+            "time((x=1<<E))",
+            "time !((0<<E))",
+            "if !((x=1<<E));then :;fi",
+            "true&&!((0<<E))",
+            "(!((0<<E)))",
+            "echo $(if((x=1<<E));then :;fi)",
+            "x=$(!((0<<E)))",
+            "case x in x)if((x=1<<E));then :;fi;;esac",
+            "{{((x=1<<E))}}",
+            "repeat 1 {((x=1<<E))}",
+            "f(){((x=1<<E))}",
+            "{ :;}&&{((x=1<<E))}",
+            "for i in a;{((x=1<<E))}",
+            "{ :; } always {((x=1<<E))}",
+            "for i (a) {((x=1<<E))}",
+            "if\\\n((x=1<<E));then :;fi",
+        ):
+            command = head + "\ngit tag v1\nE"
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err, command)
+        for command in (
+            "echo $[ $(: ]; echo 1) + ##a ]; git tag v1",
+            "echo $[ $(( 1 ]1 )) + ##a ]; git tag v1",
+            "echo $[ $[ $(: ]) ] + ##a ]; git tag v1",
+            "echo $[ $(: # ]\n) + ##a ]; git tag v1",
+            "if((1))#y\nthen git tag v1; fi",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("release authorisation", err, command)
+        for command in (
+            "{(( 1 ' )); git tag v1; } # '",
+            '{(( 1 " )); git tag v1; } # "',
+            "{{(( 1 ' )); git tag v1; }} # '",
+            "{(( 1 ' ))}; git tag v1 # '",
+            "repeat 1 {(( 1 ' )); git tag v1; } # '",
+            "f(){(( 1 ' )); git tag v1; }; f # '",
+            "[[ a == (a)#y ]]; git tag v1",
+            "[[ a == (a|#b) ]]; git tag v1",
+            "[[ a = (a)#y ]]; git tag v1",
+            "[[ a != (b)#y ]]; git tag v1",
+            "[[ a =~ (a)#y ]]; git tag v1",
+            "setopt nonomatch; echo (a|#b); git tag v1",
+            "setopt nonomatch; print -r -- (N)#y; git tag v1",
+            "setopt nonomatch; echo (a)#y; git tag v1",
+            "setopt nonomatch; echo ((a)|b)#y; git tag v1",
+            "setopt nonomatch; echo ((a))#y; git tag v1",
+            "setopt extendedglob nonomatch; echo (#i)x; git tag v1",
+            "setopt nonomatch; echo a (a)#y; git tag v1",
+            'setopt nonomatch; echo "a" (a)#y; git tag v1',
+            "setopt nonomatch; echo if (a)#y; git tag v1",
+            "setopt nonomatch; echo then (a)#y; git tag v1",
+            "setopt nonomatch; echo ]] (a)#y; git tag v1",
+            "setopt nonomatch; x=1 echo (a)#y; git tag v1",
+            "setopt nonomatch; echo >/dev/null (a)#y; git tag v1",
+            "setopt nonomatch; echo 2>&1 (a)#y; git tag v1",
+            "setopt nonomatch; echo $(echo (a)#y); git tag v1",
+            "setopt nonomatch; echo (a b)#y; git tag v1",
+            "setopt nonomatch; for i in (a)#y; do :; done; git tag v1",
+            "setopt nonomatch; noglob echo (a)#y; git tag v1",
+            "setopt nonomatch; noglob (a)#y; git tag v1",
+            "case x in (a)#y) :;; esac; git tag v1",
+            "setopt nonomatch; case (a)#y in x) :;; esac; git tag v1",
+        ):
+            code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
+            self.assertEqual(code, 2, command)
+            self.assertIn("bash and zsh", err, command)
+        for command in (
+            'echo $[ $(echo "1") + 1 ]',
+            "echo $[ $(echo '1') + 1 ]",
+            "if((1));then echo y;fi",
+            "(echo a) # note",
+            "[[ (a == a) ]] && echo y",
+            "echo x(N)",
+        ):
+            self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
+
     def test_the_gate_never_fails_open_on_a_long_or_nested_call(self):
         self.configure(gatedCommands=["^git tag ", "^git push .*--force"])
         refs = " ".join(f"r{n}" for n in range(70))
@@ -1044,6 +1135,7 @@ class RedGuardTests(HookCase):
             "=git commit -am x",
             "{=git commit -am x}",
             "env =git commit -am x",
+            "if((x=1<<E));then :;fi\ngit commit -am x\nE",
         ):
             code, _, err = run_hook("red_guard.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)

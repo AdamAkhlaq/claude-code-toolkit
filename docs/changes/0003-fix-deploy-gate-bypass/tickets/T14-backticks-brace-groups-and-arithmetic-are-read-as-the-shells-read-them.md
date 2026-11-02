@@ -102,7 +102,7 @@ Ran 88 tests in 23.163s
 OK
 ```
 
-Before fixing, each family in Context was checked in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git` that prints to stderr. Every form that got past a hook went into the proving test, which was committed failing (3766939). It failed first on `` echo `bash -c 'echo a # x \\ ``, newline, `` git tag v1'` ``, where the gate exited 0, and red-guard failed on `{git commit -am x}`, which also exited 0. The members in the Context amendment turned up while fixing. They were added to the test in the fix commit, and each one gets past the hooks at `28f3cbb`, apart from `((echo a) # it's`, newline, `); git tag v1; echo "'"`, which is a guard against a regression found mid-fix.
+Before fixing, each family in Context was checked in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git` that prints to stderr. Every form that got past a hook went into the proving test, which was committed failing (3766939). It failed first on ``echo `bash -c 'echo a # x \\``, newline, `` git tag v1'` ``, where the gate exited 0, and red-guard failed on `{git commit -am x}`, which also exited 0. The members in the Context amendment turned up while fixing. They were added to the test in the fix commit, and each one gets past the hooks at `28f3cbb`, apart from `((echo a) # it's`, newline, `); git tag v1; echo "'"`, which is a guard against a regression found mid-fix.
 
 Shell facts behind the fix, from the probes:
 
@@ -138,28 +138,28 @@ Probe sweeps on the final code:
 
 Live check, 2026-10-31, on the final code. Headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` sessions ran one Bash call per command, with no `RELEASE_AUTHORIZED` and no marker. The first used a throwaway repo with `"gatedCommands": ["^git tag "]`:
 
-| Command | Result |
-| --- | --- |
-| `` echo `bash -c 'echo a # x \\ `` / `` git tag v1'` `` | blocked: matches `^git tag ` |
-| `{git tag v2}` | blocked: matches `^git tag ` |
-| `(( y = ##a )); git tag v3` | blocked: matches `^git tag ` |
-| `echo $(echo a)#x; git tag v4` | blocked: matches `^git tag ` |
-| `` x=`: # ` `` / `bash -c 'echo a # x \` / `git tag v5'` | blocked: matches `^git tag ` |
+| Command                                                           | Result                                                                  |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| ``echo `bash -c 'echo a # x \\`` / `` git tag v1'` ``             | blocked: matches `^git tag `                                            |
+| `{git tag v2}`                                                    | blocked: matches `^git tag `                                            |
+| `(( y = ##a )); git tag v3`                                       | blocked: matches `^git tag `                                            |
+| `echo $(echo a)#x; git tag v4`                                    | blocked: matches `^git tag `                                            |
+| `` x=`: # ` `` / `bash -c 'echo a # x \` / `git tag v5'`          | blocked: matches `^git tag `                                            |
 | `echo "$({case x in x) echo ")"; git tag v6; echo "(" ;; esac})"` | blocked: "deploy-gate does not read a `case` inside a substitution ..." |
-| `` x=`echo a # note`; echo "x=$x" `` | ran: `x=a` |
-| `find . -name app.py -exec echo {} \;` | ran: `./app.py` |
-| `echo $(( 16#ff ))` | ran: `255` |
-| `echo a \` / `# c` / `echo live-ran` | ran: `a`, `live-ran` |
+| ``x=`echo a # note`; echo "x=$x"``                                | ran: `x=a`                                                              |
+| `find . -name app.py -exec echo {} \;`                            | ran: `./app.py`                                                         |
+| `echo $(( 16#ff ))`                                               | ran: `255`                                                              |
+| `echo a \` / `# c` / `echo live-ran`                              | ran: `a`, `live-ran`                                                    |
 
 The second used another throwaway repo with `"feedbackCommand": "echo boom-red; exit 1"` and a modified `app.py`:
 
-| Command | Result |
-| --- | --- |
-| `{git commit -am x}` | blocked: "Commit stopped: the feedback command is red." |
-| `echo $(echo a)#x; git commit -am x` | blocked: "Commit stopped: the feedback command is red." |
-| `` echo `bash -c 'echo a # x \\ `` / `` git commit -am x'` `` | blocked: "Commit stopped: the feedback command is red." |
-| `x=$(case x in a) echo A;; esac); echo "$x"` | blocked: "Blocked: red-guard could not read this Bash call (a `case` inside a substitution) ..." |
-| `` echo `echo 'a\ `` / `` b'` `` | ran: `ab` |
+| Command                                                     | Result                                                                                           |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `{git commit -am x}`                                        | blocked: "Commit stopped: the feedback command is red."                                          |
+| `echo $(echo a)#x; git commit -am x`                        | blocked: "Commit stopped: the feedback command is red."                                          |
+| ``echo `bash -c 'echo a # x \\`` / `` git commit -am x'` `` | blocked: "Commit stopped: the feedback command is red."                                          |
+| `x=$(case x in a) echo A;; esac); echo "$x"`                | blocked: "Blocked: red-guard could not read this Bash call (a `case` inside a substitution) ..." |
+| ``echo `echo 'a\`` / `` b'` ``                              | ran: `ab`                                                                                        |
 
 No tag was created and nothing was committed in either repo.
 
@@ -169,7 +169,7 @@ Verdict: pass
 Checks:
 
 1. ticket integrity: ok. All frontmatter fields present, `status: in-progress`, Evidence quotes `python3 -m unittest discover -s tests` with exit 0.
-2. proving test present and meaningful: ok. `DeployGateTests.test_backticks_brace_groups_and_arithmetic_are_read_as_the_shells_read_them` and the six new cases in `RedGuardTests.test_reworded_commits_are_recognised` were added on this branch (test-only commit 3766939 before the fix 8a01bec). They drive `deploy_gate.py` and `red_guard.py` as subprocesses. Run against the integration branch's hooks with this branch's test file, both fail (`0 != 2 : echo \`bash -c 'echo a # x \\` and `0 != 2 : {git commit -am x}`). Per case, 50 of the 52 release-authorisation cases and all 3 `case` cases exit 0 at the base and 2 at the head; the other two blocked as Unmodelled at base, and `((echo a) # it's` blocked at base too (the regression guard the ticket names). Spot-checked in `/bin/bash` and `/bin/zsh` with a stub `git`: `{git tag v1}` runs the tag in zsh only, `(( y = ##a )); git tag v1`, `echo $(echo a)#x; git tag v1`, the backtick `\\` form and the `` x=`: # ` `` form run it in both, and `echo a \`, newline, `#c; git tag v1` runs only `echo a` in both, matching the test's allow case.
+2. proving test present and meaningful: ok. `DeployGateTests.test_backticks_brace_groups_and_arithmetic_are_read_as_the_shells_read_them` and the six new cases in `RedGuardTests.test_reworded_commits_are_recognised` were added on this branch (test-only commit 3766939 before the fix 8a01bec). They drive `deploy_gate.py` and `red_guard.py` as subprocesses. Run against the integration branch's hooks with this branch's test file, both fail (`0 != 2 : echo \`bash -c 'echo a # x \\`and`0 != 2 : {git commit -am x}`). Per case, 50 of the 52 release-authorisation cases and all 3 `case`cases exit 0 at the base and 2 at the head; the other two blocked as Unmodelled at base, and`((echo a) # it's`blocked at base too (the regression guard the ticket names). Spot-checked in`/bin/bash`and`/bin/zsh`with a stub`git`: `{git tag v1}`runs the tag in zsh only,`(( y = ##a )); git tag v1`, `echo $(echo a)#x; git tag v1`, the backtick `\\` form and the `` x=`: # ` `` form run it in both, and `echo a \`, newline, `#c; git tag v1` runs only `echo a` in both, matching the test's allow case.
 3. proving test run: exit 0, `Ran 2 tests in 5.271s OK` (`python3 -m unittest tests.test_hooks.DeployGateTests.test_backticks_brace_groups_and_arithmetic_are_read_as_the_shells_read_them tests.test_hooks.RedGuardTests.test_reworded_commits_are_recognised`).
 4. feedback command: exit 0, `Ran 88 tests in 22.210s OK`.
 5. acceptance: 8 of 8 checked. Proving test passes (check 3). Other tests unchanged: the test diff is additions only, suite green. Timing cases: the `time.monotonic()` limits in `tests/test_hooks.py` pass within the suite. No `backtick` flag in `source_text` (grep finds none); an unquoted span ends at `escaped_close` and `backtick_script` unescapes and joins in one pass, as does the quoted path in `substitution_end`. `shell_tokens("{git tag v1}")` gives `{ git tag v1 }`, and `find . -exec echo {} \;` keeps `{}`. The comment branch is guarded by `not arithmetic and not brackets`, and `arithmetic_close` has no comment branch. The `deploy_gate.py` docstring names the case, comment, backslash-newline, unclosed, too-long and shells-differ reasons; the backlog line is gone. CHANGELOG and README describe the backtick, brace-group, arithmetic and `#` reading, and the five Nits are fixed (CHANGELOG clause, "zsh's" moved to `{case`, README "outside a backtick span", README case sentence true as amended, `skip_heredoc_bodies` docstring).

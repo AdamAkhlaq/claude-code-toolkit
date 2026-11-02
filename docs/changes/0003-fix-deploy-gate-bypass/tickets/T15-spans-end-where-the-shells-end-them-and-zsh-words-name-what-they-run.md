@@ -70,7 +70,7 @@ Amended by the executor, 2026-11-01:
 
 - **The `${...}` and `$'...'` forms block as read differently, not for release authorisation.** The probes showed the shells part on all three. Bash 3.2 counts the `)` in `${x/)/}` and reads `(( ${x/)/} + 1 ))` as nested subshells (`+: command not found`), while zsh reads it as arithmetic. Bash reads `$'\')'` as an ANSI-C quote, and zsh does not. So `arithmetic_end` raises ShellsDiffer on them, as `closing_paren` already does for an unbalanced `${...}` inside a substitution, and the proving sentence was amended in the test commit (1ecebcf).
 - **More members, all fixed and in the proving test**, each getting past the gate at `a6f928f`:
-  - backticks: `` echo `: $'a`; git tag v1; echo 'x' `` and `` echo `echo \`: "\``; git tag v1; echo "x" ``
+  - backticks: ``echo `: $'a`; git tag v1; echo 'x'`` and `` echo `echo \`: "\``; git tag v1; echo "x" ``
   - glob groups: a `#` inside the group (`x(a|#b)`, and `x(#qN)` and `*(#qN)` with `extendedglob`); a space inside it (`x(a b)#y`); a group after `"x"`, `${x}`, `$x`, `~` or an escaped `\(`; nested and chained groups (`x((a)|b)#y`, `x(a)(b)#y`); a group inside `[[ ]]`
   - `=word`: `env =git`, `command =git`, `x=1 =git`, `true && =git`, `echo $(=git tag v1)` and `=bash -c 'git tag v1'`
 - **The glob-group rule.** A `(` that does not start a word, and is not after `$`, `<`, `>` or `=`, opens a glob group, unless a `)` follows straight away as in `f()`. So does any `(` inside one. Inside a group, a `#` where a comment could start raises ShellsDiffer, and so does one straight after its `)`. The `((` arithmetic branch now needs a word start, so `x((1))#y` is a glob group too: zsh runs the tag after it, where the reader had taken `((1))` for arithmetic.
@@ -106,7 +106,7 @@ Ran 89 tests in 24.579s
 OK
 ```
 
-**Probing before the fix.** Each family in Context was checked in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git` that prints to stderr: 34 backtick and arithmetic forms and 35 glob-group and `=word` forms. Every form that got past a hook went into the proving test, which was committed failing (1ecebcf). The gate failed first on `` echo `: "`; git tag v1; echo "x" ``, exiting 0, and red-guard failed on `=git commit -am x`, also exiting 0.
+**Probing before the fix.** Each family in Context was checked in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git` that prints to stderr: 34 backtick and arithmetic forms and 35 glob-group and `=word` forms. Every form that got past a hook went into the proving test, which was committed failing (1ecebcf). The gate failed first on ``echo `: "`; git tag v1; echo "x"``, exiting 0, and red-guard failed on `=git commit -am x`, also exiting 0.
 
 **Shell facts from the probes:**
 
@@ -151,27 +151,27 @@ No existing assertion changed.
 
 **Live check, 2026-11-01, on the final code.** Headless `claude --plugin-dir <this checkout> -p --permission-mode bypassPermissions` sessions ran one Bash call per command, with no `RELEASE_AUTHORIZED` and no marker. The first used a throwaway repo with `"gatedCommands": ["^git tag "]`:
 
-| Command | Result |
-| --- | --- |
-| `` echo `: "`; git tag v1; echo "x" `` | blocked: "a backtick span whose script leaves a quote open ..." |
-| `(( y = ##' )); git tag v2 # '` | blocked: "bash and zsh read a quote inside arithmetic differently ..." |
-| `(( ${x/)/} + ##a )); git tag v3` | blocked: "bash and zsh end arithmetic holding a `${...}` ..." |
+| Command                                     | Result                                                                                                                |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| ``echo `: "`; git tag v1; echo "x"``        | blocked: "a backtick span whose script leaves a quote open ..."                                                       |
+| `(( y = ##' )); git tag v2 # '`             | blocked: "bash and zsh read a quote inside arithmetic differently ..."                                                |
+| `(( ${x/)/} + ##a )); git tag v3`           | blocked: "bash and zsh end arithmetic holding a `${...}` ..."                                                         |
 | `setopt nonomatch; echo x(N)#y; git tag v4` | blocked, by secret-guard first: "... a `#` inside or straight after a `(...)` that opens in the middle of a word ..." |
-| `=git tag v5` | blocked: matches `^git tag ` |
-| `env =git tag v6` | blocked: matches `^git tag ` |
-| `echo $(( ${x:-1} + 1 ))` | ran: `2` |
-| `f() { echo f-ran; }; f` | ran: `f-ran` |
-| `((echo 'sub-ran') )` | ran: `sub-ran` |
-| `` x=`echo "it's"`; echo "x=$x" `` | ran: `x=it's` |
+| `=git tag v5`                               | blocked: matches `^git tag `                                                                                          |
+| `env =git tag v6`                           | blocked: matches `^git tag `                                                                                          |
+| `echo $(( ${x:-1} + 1 ))`                   | ran: `2`                                                                                                              |
+| `f() { echo f-ran; }; f`                    | ran: `f-ran`                                                                                                          |
+| `((echo 'sub-ran') )`                       | ran: `sub-ran`                                                                                                        |
+| ``x=`echo "it's"`; echo "x=$x"``            | ran: `x=it's`                                                                                                         |
 
 The second used another throwaway repo with `"feedbackCommand": "echo boom-red; exit 1"` and a modified `app.py`:
 
-| Command | Result |
-| --- | --- |
-| `=git commit -am x` | blocked: "Commit stopped: the feedback command is red." |
-| `(( ${x/)/} + ##a )); git commit -am x` | blocked: "red-guard could not read this Bash call (bash and zsh end arithmetic ...)" |
-| `` echo `: "`; git commit -am x; echo "x" `` | blocked: "red-guard could not read this Bash call (a backtick span whose script leaves a quote open) ..." |
-| `echo $(( ${x:-1} + 1 ))` | ran: `2` |
+| Command                                    | Result                                                                                                    |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `=git commit -am x`                        | blocked: "Commit stopped: the feedback command is red."                                                   |
+| `(( ${x/)/} + ##a )); git commit -am x`    | blocked: "red-guard could not read this Bash call (bash and zsh end arithmetic ...)"                      |
+| ``echo `: "`; git commit -am x; echo "x"`` | blocked: "red-guard could not read this Bash call (a backtick span whose script leaves a quote open) ..." |
+| `echo $(( ${x:-1} + 1 ))`                  | ran: `2`                                                                                                  |
 
 No tag was created and nothing was committed in either repo.
 

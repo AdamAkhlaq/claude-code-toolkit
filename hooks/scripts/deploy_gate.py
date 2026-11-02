@@ -8,17 +8,20 @@ could name a program, so `^git tag ` also catches `cd . && git tag v1`,
 `sudo git tag v1`, zsh's `{git tag v1}` and zsh's `=git tag v1`. A call too
 long or too deeply nested to read is blocked rather than half read. So is
 one bash and zsh read differently: `$$'` before a backslash, a heredoc
-delimiter starting with `$"` or `$$'`, a `'...'` span or an unbalanced
+delimiter starting with `$"` or `$$'`, a `'...'` span inside a double-quoted
+`${...}` holding a character that changes where it ends, an unbalanced
 bracket after `$$` inside double quotes, a `${...}` with an unbalanced
 parenthesis inside a substitution, a quoted heredoc body holding a
 backslash-newline inside a substitution, a quote inside arithmetic or a
 `${...}` that makes the shells end arithmetic apart, and a `#` straight
-after an array's `)` or inside or straight after a glob group such as
-`x(N)`. So is one that never closes: a double-quoted substitution or
-`${...}`, or a backtick span whose script leaves a quote open. So is one the
-reader does not model: a `case`, or a `#` comment ending in a backslash,
-inside a `$(...)`, `<(...)` or `>(...)` span, and a backslash-newline that would
-change where a quote, substitution, heredoc or comment ends.
+after an array's `)` or inside or straight after a zsh glob group: a `(`
+in the middle of a word, such as `x(N)`, or at the start of an argument
+word, a `case` pattern or a `[[ ]]` pattern, such as `echo (a)`. So is one
+that never closes: a double-quoted substitution or `${...}`, or a backtick
+span whose script leaves a quote open. So is one the reader does not model:
+a `case`, or a `#` comment ending in a backslash, inside a `$(...)`,
+`<(...)` or `>(...)` span, and a backslash-newline that would change where a
+quote, substitution, heredoc or comment ends.
 A script fed to an interpreter, such as `echo 'git tag v1' | bash`, is not
 read, nor is a word built from a variable, such as `git $t v1`.
 """

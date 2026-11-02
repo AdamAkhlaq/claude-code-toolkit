@@ -72,3 +72,54 @@ Existing assertions this may change: a test asserting the old `CASE_IN_SUBSTITUT
 - `CHANGELOG.md` and the README's `deploy-gate` paragraph describe the new reading.
 
 ## Evidence
+
+### Evidence 2026-11-02 17:53
+
+Command: `python3 -m unittest discover -s tests`
+Exit code: 0
+
+```
+..........................................................................................
+----------------------------------------------------------------------
+Ran 90 tests in 31.652s
+
+OK
+```
+
+**Probing before the fix.** Each family in Context was checked in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git` that prints to stderr: 57 forms of a `((` glued to a reserved word, `{` or `)`, 70 forms of a word-start `(` in command and argument position, in `[[ ]]`, after redirections and in `case`, and 50 `$[` span-end and boundary forms. Every form that got past a hook went into the proving test, which was committed failing (52e6fb6): 90 tests, the two named in `proves` failing. The gate failed first on `if((x=1<<E));then :;fi`, `git tag v1` and `E` on lines of their own, exiting 0, and red-guard failed on its commit form, also exiting 0.
+
+**Shell facts from the probes:**
+
+- bash runs the line after `if((x=1<<E))` and its `elif((`, `then((`, `else((`, `while((`, `until((`, `for((`, `do((`, `!((` and `time((` forms, and after `if` and a backslash-newline before `((`. zsh does the same after a run of `{` (`{((`, `{{((`), including after `f(){`, `always {`, `;{`, `&&{` and zsh's `for i (a) {((`, and after the `)` of `for i (a)((` and `foreach i (a)((`. Neither shell runs it after `coproc((`, `select((`, `function((`, `noglob((`, `nocorrect((`, `repeat((`, `{if((`, `!{((`, `}((`, `fi((` or `done((`, or after a quoted or escaped `if`.
+- zsh reads a `(` that starts a word in argument position as a glob group: after any argument, a redirection, `noglob` or `x=1 echo`, inside `$(...)`, in a `for ... in` list, as a `case` subject or pattern (after `in`, `|`, a newline or `;;`, with no option set) and after `==`, `=`, `!=` or `=~` inside `[[ ]]` (no option set). bash runs the command after `[[ a =~ (a)#y ]]`, reading the `(` as part of the regular expression.
+- Neither shell runs the rest of the line after a word-start `(` in command position: `(a)#y`, `if (echo a)#y`, `! (false)#y`, `{ (echo a)#y; }`, `f() (echo a)#y`, `x=1 (a)#y`, `>/dev/null (a)#y`, `{ :; } (a)#y` or `fi (a)#y`.
+- zsh does not end `$[` at a `]` inside a nested `$(...)`, `$((...))` or `$[...]`, or inside a `#` comment in a nested `$(...)`.
+
+**The fix.**
+
+- **Word position.** A new `WordPosition` in `_common.py` tracks whether the next word names a command, sits in `[[ ]]` (and at a grouping position there), in a `case` pattern, or is a redirection's target. Control operators, reserved words that a command follows, a run of zsh's `{` and assignments keep command position; any other word ends it. A `case` pattern runs from its `in` or `;;` to its own `)`, so a `|`, newline or `;;` there does not reset it, and its `)` no longer pops a subshell around the `case`. Every entry on `source_text`'s bracket stack saves the position and its close restores it. Operators inside arrays and glob groups are not control operators.
+- **Glob groups.** A `(` that starts a word in argument position, in a `case` pattern, or in `[[ ]]` anywhere but after `[[`, `!`, `&&`, `||` or `(`, gets the glob kind, so a `#` inside it or straight after its `)` raises ShellsDiffer. A `(` in command position and a grouping `(` in `[[ ]]` read as before.
+- **Arithmetic.** A `((` is a candidate for arithmetic at a word start, straight after a reserved word that starts its word (`if`, `then`, `elif`, `else`, `do`, `while`, `until`, `!`, `time`, `for`, a backslash-newline between letters allowed), after a run of `{` that starts its word, and straight after a `)`, which covers zsh's `for i (a)((...))`. `arithmetic_end` still decides it. Outside command position, and after a `)`, its outer kind is a glob group, so a `#` straight after its `))` raises ShellsDiffer.
+- **`$[`.** `$[` is an entry on the bracket stack, closed only by the `]` that `arithmetic_end` returns for it, and the `brackets` counter is gone. A nested `$(...)` is a `WORD` on top of it, so its `]` does not count and the quote check does not fire inside it. The `$[` branch now passes the call's `matches` to `arithmetic_end`. Without that, 10,000 nested `$[` took 75 s in the gate and 37 s in red-guard, the same at `8c27a80`. With it they take 0.10 s and 0.34 s.
+
+**Probing after the fix.** All 263 probed forms, plus 39 everyday commands: no form that bash or zsh runs gets past the gate, and `is_git_commit` misses no commit form. Forms newly blocked where neither shell runs the gated command (over-blocks, accepted): `f() (echo a)#y`, `[[ -n (a)#y ]]`, `[[ a < (b)#y ]]`, `{ :; } (a)#y`, `fi (a)#y`, `echo [[ (a)#y`, `case x in esac) :;; (a)#y)`, and a `((` with a quote after a `)` such as `x(a)((1 ' ))`. Now allowed: `echo $[ $(echo "1") + 1 ]` and `echo $[ $(echo '1') + 1 ]`, as the first Nit asks, and `{((1))#y}; git tag v1`, which neither shell runs. Of the 39 everyday commands, the results are unchanged from `8c27a80`. Each changed match was probed inside single quotes, `$'...'`, double quotes, backticks, heredoc bodies, comments, `[[ ]]`, arithmetic and `case` patterns, with an escaped `\\` before it, after `{` and after a reserved word with no space between, in command and argument position.
+
+**Live check.** In this session, with the plugin loaded from this working tree, from a scratch repo: `if((x=1<<E));then :;fi`, `git tag v1`, `E` and `echo $[ $(: ]; echo 1) + ##a ]; git tag v1` were blocked by deploy-gate naming release authorisation. `setopt nonomatch; echo (a|#b); git tag v1` was blocked by ticket-sync with the new glob-group reason, since a ticket is in progress. `echo $[ $(echo "1") + 1 ]` ran and printed `2`. The scratch repo has no tags.
+
+**Timing.** These are gate (`readings`) and `is_git_commit` times, at the fix against `8c27a80`:
+
+- Every T15 row is within 0.15 s of before in both hooks, except `10k ((a) #x`. That row writes `( (a) #x`, a newline and `) ` 10,000 times: a subshell straight after another's `)`, a syntax error in bash. The second `((a)` is now in argument position, so it is a glob group and its `#x` raises ShellsDiffer in 0.00 s (0.16 s and 2.34 s before).
+- New rows: 20,000 `echo (a)`, 20,000 `case` patterns `a|(b))`, 10,000 `$[ $(: ]) ]`, 20,000 nested `x(` and 20,000 `x((1))` take the same time as before. 10,000 nested `$[` take 0.10 s and 0.34 s, down from 75 s and 37 s.
+- A first version checked the glued word with a slice from the word's start at every `(` in the middle of a word, which made 20,000 nested `x(` take 0.42 s against 0.12 s. The check now looks back at most 16 characters, and a run of `{` is measured once, when its word starts.
+- red-guard takes 40 s on 20,000 `if((1));then :;fi;` (380,000 characters) and 17 to 20 s on 20,000 `case` patterns, `[[ (a == a) ]];` or `x(a)((1))`, the same at `8c27a80`. That is the quadratic `find_commit` already in `docs/backlog.md`.
+- The T6, T7, T10, T11, T12 and T13 timing tests pass.
+
+**Docs.**
+
+- The `deploy_gate.py` docstring was checked against every raise site, one by one: the `$$'` quote, the `$"`/`$$'` heredoc delimiter, the `'...'` span inside a double-quoted `${...}`, the unbalanced bracket after `$$`, the unbalanced parenthesis in a `${...}` inside a substitution, the quoted heredoc body, the quote and the `${...}` in arithmetic, the `#` after an array or in a glob group (`ShellsDiffer`); the double-quoted substitution or `${...}` that never closes and the backtick span leaving a quote open (`Unclosed`); the `case` and the comment in a span and the backslash-newline (`Unmodelled`). It now names each as its raise site has it, with the glob group's new openings.
+- `red_guard.only_bookkeeping` names programs with `program_name`, so `=git status` and `=git add -A` count as bookkeeping. `CASE_IN_SUBSTITUTION` says "a `case` inside a `$(...)`, `<(...)` or `>(...)` span". The `Unmodelled` and `HASH_IN_GLOB` messages and the `source_text` docstring say what changed.
+- CHANGELOG and the README's `deploy-gate` paragraph describe the new reading.
+
+No existing assertion changed. The tests that check the `case` message look for "`case`", which the new words keep.
+
+`claude plugin validate .` passes, with the same `.DS_Store` warnings as before. `toolkit-graph validate 0003` prints ok. Prettier is not installed on this machine, so the configured formatter did not run; the Markdown edits keep one paragraph per line.

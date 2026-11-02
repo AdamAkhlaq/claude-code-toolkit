@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 
-from _common import DEFAULT_TEST_GLOBS, block, commit_checkout, first_match, git, git_options, is_git_commit, is_operator, load_config, project_dir, read_event, same_repository, shell_tokens, tool_input
+from _common import DEFAULT_TEST_GLOBS, block, commit_checkout, first_match, git, git_options, is_git_commit, is_operator, load_config, program_name, project_dir, read_error, read_event, same_repository, shell_tokens, tool_input
 
 TAIL_LINES = 40
 LIMIT_SECONDS = 570
@@ -75,7 +75,7 @@ def only_bookkeeping(command: str) -> bool:
     for words in segments:
         if not words or words[0] == "cd" or words[0] in READ_ONLY:
             continue
-        if os.path.basename(words[0]) != "git":
+        if program_name(words[0]) != "git":
             return False
         _, rest = git_options(words[1:])
         if not rest or rest[0] not in BOOKKEEPING:
@@ -138,10 +138,16 @@ def main() -> int:
     try:
         event = read_event()
         command = tool_input(event).get("command") or ""
-        if not is_git_commit(command):
-            return 0
     except Exception:
         return 0
+    try:
+        if not is_git_commit(command):
+            return 0
+    except Exception as exc:
+        config = load_config(project_dir())
+        if not (config and config.get("feedbackCommand")):
+            return 0
+        return block(f"Blocked: red-guard could not read this Bash call ({read_error(exc)}), so it cannot tell whether it commits. Split or rephrase it.")
     try:
         return guard(event, command)
     except Exception as exc:

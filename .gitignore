@@ -5,3 +5,4 @@ __pycache__/
 .claude/.tests-locked
 .claude/.release-authorized
 evals/results/
+node_modules/

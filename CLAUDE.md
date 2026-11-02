@@ -16,9 +16,10 @@ This repo is the `toolkit` Claude Code plugin, served from its own marketplace `
 ## Commands
 
 - Test: `python3 -m unittest discover -s tests -v`
-- Validate the plugin: `~/.nvm/versions/node/v25.3.0/bin/claude plugin validate .` (the `claude` on PATH is a work wrapper; use this binary)
-- Run the eval suite: `~/.nvm/versions/node/v25.3.0/bin/claude plugin eval . --runs 1 --no-publish --scaffold` from a clone, before a release. It costs tokens. Do not pass `--allow-tools Bash`: the runner refuses the Bash grant on this machine because of credential files it cannot sandbox.
-- Try it live: `cc --plugin-dir .` from this repo or any other. `cc` is the maintainer's shell function for their personal Claude Code account and passes arguments through. Work on this repo itself runs this way, so the toolkit's skills, agents and hooks are live. `~/.nvm/versions/node/v25.3.0/bin/claude --plugin-dir .` also works.
+- Set up once: `npm ci`, which installs the pinned Prettier that `format-lint` runs on Markdown and JSON through `npx --no-install prettier`. Node is development tooling only; consumers of the plugin need nothing but `python3` and `git`.
+- Validate the plugin: `~/.nvm/current/bin/claude plugin validate .` (the `claude` on PATH is a work wrapper; use this binary, which `~/.nvm/current` keeps pointing at nvm's active Node)
+- Run the eval suite: `~/.nvm/current/bin/claude plugin eval . --runs 1 --no-publish --scaffold` from a clone, before a release. It costs tokens. Do not pass `--allow-tools Bash`: the runner refuses the Bash grant on this machine because of credential files it cannot sandbox.
+- Try it live: `cc --plugin-dir .` from this repo or any other. `cc` is the maintainer's shell function for their personal Claude Code account and passes arguments through. Work on this repo itself runs this way, so the toolkit's skills, agents and hooks are live. `~/.nvm/current/bin/claude --plugin-dir .` also works.
 
 ## Workflow for this repo
 

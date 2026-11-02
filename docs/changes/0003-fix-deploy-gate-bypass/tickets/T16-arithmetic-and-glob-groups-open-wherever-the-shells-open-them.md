@@ -12,7 +12,9 @@ files:
     README.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_arithmetic_and_glob_groups_open_wherever_the_shells_open_them: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `if((x=1<<E));then :;fi`, `while((0<<E));do :;done`, `for((i=0;i<1<<E;i++));do :;done`, `!((0<<E))` and `{((x=1<<E))}`, each followed by `git tag v1` and `E` on lines of their own, and on `echo $[ $(: ]; echo 1) + ##a ]; git tag v1`; exits 2 naming bash and zsh on `{(( 1 '' )); git tag v1; } # ''`, `repeat 1 {(( 1 '' )); git tag v1; } # ''`, `f(){(( 1 '' )); git tag v1; }; f # ''`, `[[ a == (a)#y ]]; git tag v1`, `[[ a == (a|#b) ]]; git tag v1`, `setopt nonomatch; echo (a|#b); git tag v1` and `setopt nonomatch; print -r -- (N)#y; git tag v1`; and exits 0 silently on `echo $[ $(echo "1") + 1 ]`, `if((1));then echo y;fi`, `(echo a) # note`, `[[ (a == a) ]] && echo y` and `echo x(N)`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `if((x=1<<E));then :;fi`, `git commit -am x` and `E` on lines of their own'
-status: todo
+status: in-progress
+executed_by: single
+branch: ticket/0003-T16
 ---
 
 ## Context

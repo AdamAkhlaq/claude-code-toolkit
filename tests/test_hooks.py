@@ -810,6 +810,7 @@ class DeployGateTests(HookCase):
             "cat <(echo a|#b); git tag v1",
             "! < (N)#y; git tag v1",
             "time &> (a|#b); git tag v1",
+            "setopt nonomatch; time -p (a)#y; git tag v1",
             *(f"echo {span}echo a{op}#b); git tag v1" for span in ("$(", "<(", ">(") for op in (";", "|", "&", "&&", "||", ">", "<")),
             "<(a|#b); git tag v1",
             ">(a|#b); git tag v1",
@@ -817,6 +818,12 @@ class DeployGateTests(HookCase):
             "echo x >(a|#b); git tag v1",
             "x=$(if true;then :;fi;#b); git tag v1",
             "echo $( (echo a;#b) ); git tag v1",
+            "echo $( (a)#y ); git tag v1",
+            "echo $( ((1))#y ); git tag v1",
+            "echo $(f() (a)#y); git tag v1",
+            "echo $(f()#y); git tag v1",
+            "cat <( (a)#y ); git tag v1",
+            "echo $(! (a)#y); git tag v1",
         ):
             code, _, err = run_hook("deploy_gate.py", bash_event(command), self.root)
             self.assertEqual(code, 2, command)
@@ -834,6 +841,9 @@ class DeployGateTests(HookCase):
             "x=($(cat <<E\na\nE\n))",
             "cat <(echo a) # c",
             "diff <(a) <(b) # c",
+            "echo $( (a) #y\n)",
+            "f() { (cd /tmp && ls) # list\n}",
+            "case $x in (a|b) echo ab;; (*) echo other;; esac",
         ):
             self.assertEqual(run_hook("deploy_gate.py", bash_event(command), self.root), (0, "", ""), command)
 

@@ -1,7 +1,7 @@
 ---
 id: "0003"
 slug: "fix-deploy-gate-bypass"
-reviewed: 19f6f8b646fd20d345bd99a1501c60f3201ab214
+reviewed: f1448b55125e1a9a4b1d99729379c3667e2df0eb
 created: "2026-10-24"
 ---
 
@@ -401,6 +401,49 @@ Three passes from `REVIEW.md` over the delta `a6f928f...19f6f8b`, which holds th
 - The four Importants go to a new ticket, T16, appended with `/toolkit:tickets`; each finding stays open until T16 is done. (maintainer, "New ticket T16")
 - The three Nits are folded into T16, which works the same code paths. (maintainer, "Fold into T16")
 - The regression came from tightening a match without probing it glued to a reserved word or in argument position, a position slip of the kind earlier rounds found after `{`. `CLAUDE.md`'s reader-step line now also names straight after a reserved word with no space between (`if((`, `!((`) and both command and argument position. (maintainer, "Extend the line")
+
+### Waivers
+
+<none yet>
+
+## Review 2026-11-02 of f1448b5
+
+Three passes from `REVIEW.md` over the delta `19f6f8b...f1448b5`, each in its own context: the tenth round's record, the T16 ticket, T16 itself, its review ticks and its backlog line. Every finding below was re-run against the hooks at `f1448b5` and at `19f6f8b`, in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git`. Three are regressions from T16's `WordPosition`: a case separator with no `case` open puts it in pattern mode, a function definition's `()` leaves its body in argument position, and a pattern's leading `(` keeps a whole `case` body in pattern mode. The first lets a gated command through; the other two block ordinary calls. Five more were already open at `19f6f8b`, in the families T16 worked on: a `<<` inside a bash array, a `(` that is a redirection's target, a `<<<(`, `<>(` or `>&(` read as process substitution, `time -p((`, and a `#` straight after an operator inside a `$(...)` or `<(...)` span. The last is a scope question: T16 also opens arithmetic at a `((` straight after a `)`, which the tickets gate did not decide and no test row covers. The frontmatter's `reviewed:` now names this round's head.
+
+### Important
+
+- [ ] hooks/scripts/\_common.py:644 `WordPosition.operator` enters pattern mode on any `;;`, `;&`, `;|` or `;;&`, whether or not a `case` is open at that depth. Inside a `$(...)` or `<(...)` span with none, the span's `)` is then taken as a pattern's `)` at line 851 and never pops the `WORD`, and a `#` straight after it reads as a comment. `echo $(:;;)#; git tag v1`, its `;&`, `;|` and `;;&` forms, `echo $(echo a` newline `;;` newline `)#; git tag v1` and `cat <(:;;)#; git tag v1` pass `deploy-gate`, and bash runs the tag, failing only that expansion; `19f6f8b` blocked all of them. `is_git_commit` is False on the commit forms, True at `19f6f8b`. Fix: enter pattern mode on a separator only while a `case` is open at that depth, counted per depth from `case` to `esac` or `}`. (bugs)
+- [ ] hooks/scripts/\_common.py:692 `pop("")` leaves argument position after the `)` of `f()`, and `word()` then does not take the `{` after it as keeping command position, so a word-start `(` in the body is read as a glob group; `function f {` does the same after the name. `f() { (echo a # c` newline `echo b) }`, `f () { (echo a; echo b # c` newline `) }` and `function f { (echo a # c` newline `echo b) }` are blocked as ShellsDiffer, though both shells run them and `19f6f8b` let them through. They hold no gated command, so this blocks unrelated calls. Fix: keep command position after the `()` of a function definition and after the name in `function NAME`. (bugs)
+- [ ] hooks/scripts/\_common.py:683 A pattern's optional leading `(`, as in `case x in (x) ...`, is pushed as a glob group. `push` clears `pattern` and `pop` restores it, so the whole body until `esac` reads as pattern text, every `(` in it as a glob group. `case x in (x) (echo a # c` newline `echo b);; esac` and `case x in (x) echo a | (cat # c` newline `);; esac` are blocked as ShellsDiffer, though both shells run them and `19f6f8b` let them through. Fix: let the `)` that closes a pattern opened by its own leading `(` end the pattern, rather than restoring pattern mode. (bugs, security)
+- [ ] hooks/scripts/\_common.py:891 A `<<` inside a bash array is read as a heredoc, but bash 3.2 rejects that line alone and runs the lines after it. `x=(a <<E)`, `git tag v1`, `E` on lines of their own, and its `x+=(` and `declare -a x=(` forms pass `deploy-gate`, and bash runs the tag; zsh rejects the whole script. Open at `19f6f8b` too. `is_git_commit` is False on the commit forms. Fix: raise ShellsDiffer on a `<<` inside an `ARRAY`. (bugs)
+- [ ] hooks/scripts/\_common.py:636 `WordPosition.argument()` ignores a pending redirection target, so a `(` that is the target of a redirection at command position is read as a subshell, while zsh reads it as a glob group. `> (a|#b); git tag v1`, `! < (N)#y; git tag v1`, `>|(a)#y; git tag v1` and `>&(a|#b); git tag v1` pass `deploy-gate`, and zsh runs the tag. Open at `19f6f8b` too, but `WordPosition` models redirection targets on purpose. `is_git_commit` misses `> (a|#b); git commit -am x`. Fix: `argument()` is True while a redirection's target is pending. (security)
+- [ ] hooks/scripts/\_common.py:840 `before in ("<", ">")` opens a process substitution at a `(` after any `<` or `>`, including the last character of `<<<`, `<>` or `>&`. zsh reads `<<<(a|#b)` as a here-string whose word is a glob group. `echo x <<<(a|#b); git tag v1` and `<>(a|#b); git tag v1` pass `deploy-gate`, and zsh runs the tag. Open at `19f6f8b` too. Fix: open a `WORD` there only when the `<` or `>` starts its own operator token, `<(` or `>(`, and let the redirection-target fix read the rest as a glob group. (security)
+- [ ] hooks/scripts/\_common.py:607 `RESERVED_GLUED` has no `time -p`, so the `((` in `time -p((x=1<<E))` is read as a glob group and its `<<E` as a heredoc. `time -p((x=1<<E))`, `git tag v1`, `E` on lines of their own pass `deploy-gate`, and bash runs the tag; the `git commit -am x` form passes `is_git_commit`. Open at `19f6f8b` too. Fix: take a `-p` word straight after `time` as keeping command position and as a reserved word a `((` can follow. (security)
+- [ ] hooks/scripts/\_common.py:809 A `#` straight after `;`, `|`, `&`, `&&`, `||`, `<` or `>` inside a `$(...)`, `<(...)` or `>(...)` span is read as a comment, but bash 3.2 reads it as part of a word there and ends the span at the next `)`. `echo $(echo a;#b); git tag v1`, `echo $(echo a|#b); git tag v1`, `cat <(echo a|#b); git tag v1` and `x=$(if true;then :;fi;#b); git tag v1` pass `deploy-gate`, and bash runs the tag; zsh reads a comment. Open at `19f6f8b` too. `is_git_commit` is False on the commit forms. Fix: inside a substitution, a `#` whose previous character is not a blank or newline raises ShellsDiffer. (security)
+- [ ] hooks/scripts/\_common.py:830 The `((` branch also opens arithmetic straight after a `)`. The tickets gate decided only a word start, a reserved word or a run of `{`, and said "Elsewhere in a word it stays a glob group", as T16's Acceptance repeats. It closes real zsh bypasses, `for i (a)((x=1<<E))` and `foreach i (a)((x=1<<E));end`, both blocked at `f1448b5` and at `19f6f8b` too, but it was not decided, its only record is `docs/backlog.md`, and no test row guards it. Fix: record the widening as a decision and add the two forms, each followed by `git tag v1` and `E` on lines of their own, to the proving test. (compliance)
+
+### Nits
+
+- CHANGELOG.md:10 and :12 still say a call that "holds a `case` inside a substitution" is blocked, while T16 changed `CASE_IN_SUBSTITUTION` to the span wording. Fix: "a `case` inside a `$(...)`, `<(...)` or `>(...)` span" on both lines. (compliance)
+- hooks/scripts/\_common.py:565 `COMMENT_IN_SUBSTITUTION` still says "inside a substitution", while the `Unmodelled` docstring and `deploy_gate.py` now name the span kinds. Fix: the same span wording. (compliance)
+- hooks/scripts/red_guard.py:78 `only_bookkeeping` now takes `=git status` and `=git add -A` as bookkeeping, a red-guard change CHANGELOG does not mention. Fix: a clause in CHANGELOG.md:10. (compliance)
+- README.md:76 The `deploy-gate` paragraph describes the new `((` and glob-group reading but not that a `$[...]` ends at its own `]`, which lets `$[ $(echo "1") + 1 ]` through. Fix: one sentence on `$[...]`. (compliance)
+- hooks/scripts/\_common.py:686 `push(WORD)` zeroes `case_words` and `pop` does not restore it, so `case $(cmd) in` never enters pattern mode and its `(x)` pattern leaves the body in argument position. Safe today, an over-block only. Fix: save and restore `case_words` with the rest. (bugs)
+
+0 Nits dropped.
+
+### Out of pass
+
+- No pull request exists yet, so its statement of merge danger could not be checked.
+- zsh glob qualifiers such as `*(e:...:)` run code. That is the documented gap of a script fed to an interpreter, open before this delta.
+- None of the eight bypass and over-block families above has a test row.
+
+### Decisions
+
+- The nine Importants go to a new ticket, T17, appended with `/toolkit:tickets`; each finding stays open until T17 is done. (maintainer, "New ticket T17")
+- T16's widening that opens arithmetic at a `((` straight after a `)` stays, as decided now: T17 adds `for i (a)((x=1<<E))` and `foreach i (a)((x=1<<E));end`, each followed by `git tag v1` and `E` on lines of their own, to the proving test, and removes the backlog line. (maintainer, "Keep it, add test rows")
+- The five Nits are folded into T17, which works the same code and docs. (maintainer, "Fold into T17")
+- `case` state has now misfired in three rounds: the sixth and seventh, and this one's separator with no `case` open. `CLAUDE.md` gains a line: a reader state a token switches on holds only while its opening construct is open at that depth, and is probed where the opener is absent, inside a `$(...)` that holds none, across each bracket the reader pushes and pops, and on everyday forms that hold the state. (maintainer, "Add the line")
 
 ### Waivers
 

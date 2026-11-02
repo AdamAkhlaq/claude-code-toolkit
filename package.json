@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Development tooling only. The plugin itself needs nothing but python3 and git.",
+  "devDependencies": {
+    "prettier": "3.9.10"
+  }
+}

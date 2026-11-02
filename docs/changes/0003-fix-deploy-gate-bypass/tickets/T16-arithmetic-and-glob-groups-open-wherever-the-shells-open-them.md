@@ -12,7 +12,7 @@ files:
     README.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_arithmetic_and_glob_groups_open_wherever_the_shells_open_them: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `if((x=1<<E));then :;fi`, `while((0<<E));do :;done`, `for((i=0;i<1<<E;i++));do :;done`, `!((0<<E))` and `{((x=1<<E))}`, each followed by `git tag v1` and `E` on lines of their own, and on `echo $[ $(: ]; echo 1) + ##a ]; git tag v1`; exits 2 naming bash and zsh on `{(( 1 '' )); git tag v1; } # ''`, `repeat 1 {(( 1 '' )); git tag v1; } # ''`, `f(){(( 1 '' )); git tag v1; }; f # ''`, `[[ a == (a)#y ]]; git tag v1`, `[[ a == (a|#b) ]]; git tag v1`, `setopt nonomatch; echo (a|#b); git tag v1` and `setopt nonomatch; print -r -- (N)#y; git tag v1`; and exits 0 silently on `echo $[ $(echo "1") + 1 ]`, `if((1));then echo y;fi`, `(echo a) # note`, `[[ (a == a) ]] && echo y` and `echo x(N)`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `if((x=1<<E));then :;fi`, `git commit -am x` and `E` on lines of their own'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T16
 ---
@@ -123,3 +123,16 @@ OK
 No existing assertion changed. The tests that check the `case` message look for "`case`", which the new words keep.
 
 `claude plugin validate .` passes, with the same `.DS_Store` warnings as before. `toolkit-graph validate 0003` prints ok. Prettier is not installed on this machine, so the configured formatter did not run; the Markdown edits keep one paragraph per line.
+
+### Verifier 2026-11-02 17:57
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok. `id`, `title`, `blocked_by`, `files`, `proves`, `status: in-progress`, `executed_by` and `branch` are all present, and Evidence quotes a run of the feedback command.
+2. proving test present and meaningful: ok. `DeployGateTests.test_arithmetic_and_glob_groups_open_wherever_the_shells_open_them` is new, and `RedGuardTests.test_reworded_commits_are_recognised` gains the `if((x=1<<E))` commit row. Both run the hooks as subprocesses. At the failing-test commit 52e6fb6 both fail: `0 != 2 : if((x=1<<E));then :;fi` / `git tag v1` / `E` and the same with `git commit -am x`. Row by row against the hooks at 52e6fb6, all 63 blocking rows exited 0 there and exit 2 here with the expected message, the two `$[ $(echo "1") + 1 ]` rows were blocked there and exit 0 here, and the other 4 allow rows exit 0 under both. Stub-`git` probes confirm that bash runs the tag on the `if((x=1<<E))` form, and zsh runs it on `{((x=1<<E))}`, `[[ a == (a)#y ]]`, `setopt nonomatch; echo (a|#b)`, `echo $[ $(: ]; echo 1) + ##a ]` and `{(( 1 ' )); git tag v1; } # '`.
+3. proving test run: exit 0, `Ran 2 tests in 6.351s OK`.
+4. feedback command: exit 0, `Ran 90 tests in 28.989s OK`.
+5. acceptance: 9 of 9 checked, none failed. (a) The proving test passes (check 3). (b) The test diff only adds; no existing assertion changed. (c) The timing `assertLess` cases pass in the feedback run. (d) `source_text`'s `((` branch takes a candidate at a word start, after a reserved word (`RESERVED_GLUED`) or a run of `{` (`brace_end`), and after a `)`, and `arithmetic_end` decides each. The `)` case covers `f()((` and zsh's `for i (a)((`, both on the Context's probe list, and keeps the outer `(` a glob group. `echo x((1 ' )); git tag v1 # '` still exits 0, as a mid-word glob group. Extra probes found no form that bash or zsh runs getting past the gate (`time((`, `coproc((`, `{if((`, `echo if((`, `case x in a|(b)#y)` and others). (e) `$[` pushes `BRACKET` onto `parens` and pops only at the `]` index `arithmetic_end` returned, and `source_text` has no `brackets` counter. (f) The glob-group rows exit 2 naming bash and zsh, and `(echo a) # note` and `[[ (a == a) ]] && echo y` exit 0. (g) The `deploy_gate.py` docstring names each reason raised in `_common.py`: ShellsDiffer at lines 261, 503, 785/1238, 808/858, 881/1185, 1018, 1079, 1173 and 1240; Unclosed at 905, 966 and 1104; Unmodelled at 556, 813/1178 and 864/1149. (h) `only_bookkeeping` calls `program_name(words[0])`, and `CASE_IN_SUBSTITUTION` reads "a `case` inside a `$(...)`, `<(...)` or `>(...)` span". (i) CHANGELOG and the README's `deploy-gate` paragraph describe the new `((`, `$[` and glob-group reading.
+6. scope: ok. The changed files are `CHANGELOG.md`, `README.md`, `hooks/scripts/_common.py`, `hooks/scripts/deploy_gate.py`, `hooks/scripts/red_guard.py`, `tests/test_hooks.py` and the ticket file, all within `files`.
+7. tests intact: ok. `git diff change/0003-fix-deploy-gate-bypass...HEAD -- tests/` shows additions only, with no deletions, skips or loosened values.

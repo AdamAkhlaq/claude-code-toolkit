@@ -12,7 +12,9 @@ files:
     docs/backlog.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_word_position_switches_only_where_the_shells_switch_it: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `echo $(:;;)#; git tag v1`, its `;&`, `;|` and `;;&` forms and `cat <(:;;)#; git tag v1`, and on `time -p((x=1<<E))`, `for i (a)((x=1<<E))` and `foreach i (a)((x=1<<E));end`, each followed by `git tag v1` and `E` on lines of their own; exits 2 naming bash and zsh on `x=(a <<E)` followed by `git tag v1` and `E` on lines of their own, `> (a|#b); git tag v1`, `! < (N)#y; git tag v1`, `>|(a)#y; git tag v1`, `>&(a|#b); git tag v1`, `echo x <<<(a|#b); git tag v1`, `<>(a|#b); git tag v1`, `echo $(echo a;#b); git tag v1`, `echo $(echo a|#b); git tag v1` and `cat <(echo a|#b); git tag v1`; and exits 0 silently on `f() { (echo a # c` newline `echo b) }`, `function f { (echo a # c` newline `echo b) }`, `case x in (x) (echo a # c` newline `echo b);; esac`, `case x in (x) echo a | (cat # c` newline `);; esac` and `x=$(echo a; # note` newline `)`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `echo $(:;;)#; git commit -am x` and `> (a|#b); git commit -am x`'
-status: todo
+status: done
+executed_by: single
+branch: ticket/0003-T17
 ---
 
 ## Context
@@ -72,9 +74,92 @@ Existing assertions this may change: none expected. Any existing assertion that 
 - `NAME()` and `function NAME` keep command position for the body. A pattern's leading `(` ends the pattern at its `)` where both shells end it there.
 - A `<<` inside an array, and a `#` straight after an operator character inside a `$(...)`, `<(...)` or `>(...)` span, raise ShellsDiffer.
 - A redirection's pending target is argument position, and only a `<(` or `>(` token opens a process substitution.
-- `time -p` keeps command position, and a `((` glued to `-p` there is a candidate for arithmetic.
+- A `((` glued to the `-p` of `time` is a candidate for arithmetic, and `-p` leaves argument position, where zsh reads it: amended while working the ticket, see Evidence.
 - `for i (a)((x=1<<E))` and `foreach i (a)((x=1<<E));end` are in the proving test, and their line is gone from `docs/backlog.md`.
 - The `deploy_gate.py` module docstring names every new ShellsDiffer reason, as its raise site has it.
 - The five Nits are fixed, and `CHANGELOG.md` and the README's `deploy-gate` paragraph describe the new reading.
 
 ## Evidence
+
+### Evidence 2026-11-02 20:29
+
+Command: python3 -m unittest discover -s tests
+Exit code: 0
+
+```
+----------------------------------------------------------------------
+Ran 91 tests in 30.447s
+
+OK
+```
+
+The proving test failed first at `ded855e` on `echo $(:;;)#; git tag v1` (exit 0, not 2), and `RedGuardTests.test_reworded_commits_are_recognised` on `echo $(:;;)#; git commit -am x`.
+
+**Family check.** Each form below was run in `/bin/bash` 3.2 and `/bin/zsh` 5.9 with a stub `git` that prints to stderr, and through `deploy_gate.py` and `is_git_commit`, at the fix, at `f1448b5` and at `19f6f8b`: 177 rows in the families the ticket names, the review's 29 repro rows, 98 boundary rows and 10 rows of a `#` after a subshell's `)` in a span. At the fix no row gets past a hook while bash or zsh runs its command. At `f1448b5`, 125 rows got past (74, 20, 23 and 8 by file), some of them the same form in two files.
+
+- Every case separator (`;;`, `;&`, `;|`, `;;&`) inside `$(...)`, `<(...)`, `"$(...)"`, backticks, `( )`, `{ }` and a nested `$( (...) )`, on one line and across newlines, and after a `case` that closed before it.
+- `NAME()` and `function NAME` with `{` and with `(`, `function NAME()`, zsh's `function f g {`, and a body holding a glob argument such as `echo (a)#y`.
+- A pattern's leading `(` followed by a blank, a newline, a tab, `;`, `|y`, `b`, `#` and `)`.
+- `<<`, `<<-` and a quoted `<<'E'` inside `x=(`, `x+=(`, `declare -a x=(`, `local x=(` and an array split over lines, and the forms that are not inside one: `x=(a) <<E`, `x=($(cat <<E ...))`.
+- Every redirection operator before `(`, with and without a blank, at command and argument position: `>`, `>>`, `<`, `>|`, `>&`, `<&`, `&>`, `&>>`, `<>`, `2>`, `<<<`.
+- `time -p((`, `time -p ((`, `time -p -p((`, `time -- ((` and `echo -p((`.
+- Each operator before a `#` inside `$(...)`, `<(...)`, `>(...)`, backticks and `"$(...)"`, with a blank, a tab or a newline between and without.
+
+Findings that shaped the fix:
+
+- bash 3.2 reads a `#` inside a span as a comment only after a blank, a tab, a newline or `(`. After `;`, `|`, `&`, `<`, `>` or a `)` it is part of a word, and the span ends at the next `)`. zsh reads a comment there and fails to parse each of these forms. A backslash-newline between the operator and the `#` changes nothing in bash.
+- The `)` part was found while working this ticket. `echo $( (a)#y ); git tag v1`, `echo $( ((1))#y ); git tag v1`, `echo $(if true; then (a)#y; fi); git tag v1`, `cat <( (a)#y ); git tag v1`, `echo $( { (a)#y; } ); git tag v1`, `x=( $( (a)#y ) ); git tag v1`, `echo $(! (a)#y); git tag v1` and `echo $(f()#y); git tag v1` got past at `f1448b5` and at `19f6f8b`, and bash runs the tag. `echo $(f() (a)#y); git tag v1` was blocked at `f1448b5` only because T16 read the body after `f()` as a glob group. Once the `f()` fix made it a subshell, it got past. So the trigger set includes a subshell's `)`, and these forms are in the proving test.
+- `f ( ) { ...; }` with blanks between the parentheses is a function definition to bash and a parse error to zsh, so only an exact `()` is read as a function's parentheses. The blank form still reads as a glob group: it can be over-blocked, but it cannot get past.
+- A pattern's leading `(`: in both shells the pattern ends at its `)` when a blank, a newline or `;` follows. When a word character or `|` follows, bash rejects it and zsh reads the pattern on, so it stays a glob group there.
+
+**Deviation from assumption 6.** The ticket assumed `-p` after `time` keeps command position. Done that way, `setopt nonomatch; time -p (a)#y; git tag v1` got past `deploy-gate`, and zsh ran the tag: zsh runs `-p` as a command, so `(a)#y` is a glob argument to it, while bash reads `-p` as `time`'s option. Now `-p` leaves argument position, where a `(` is a glob group and a `#` in or after it raises ShellsDiffer. A `((` glued to `-p` is still a candidate for arithmetic, so `time -p((x=1<<E))` and `time -p ((x=1<<E))` read the `<<` as a shift. The Acceptance line was amended to say so, and the zsh form is in the proving test.
+
+**Boundaries probed.** Each new state was probed where its opener is absent, inside a `$(...)` that holds none, and across each bracket the reader pushes and pops:
+
+- The `case` count: `;;` at top level, inside `( )` and `{ }` within a `case` body, after a `case` closed by `esac` with no `;;` before it, after zsh's `case x { ... }` with a brace group inside it and with `{git tag v1}` inside it, `esac` as an argument or a pattern, `case` as an argument, a `case` whose subject is `$(...)` or a backtick span, and `x=(case ...)`.
+- The leading `(`: after `;;`, `;&` and a newline, as `(x)|(y)`, `((x))`, `($(echo x))`, glued to `in` as `in(x)`, with zsh's `{(x)`, nested in an inner `case`, and with a backslash-newline after its `)`.
+- `()`: as `$()`, `x=()`, `<()`, `[[ () ]]`, `echo ()`, `()` before `((`, and `f()#c`.
+- The `function` name: as an argument, with no name, with two names, and with the name on the next line.
+- The redirection target: inside `[[ ]]`, where `>` and `<` compare, inside an array and inside a span, after a backslash-newline and a newline, after an escaped or quoted `<`, after `<<`, and a target followed by a second `(`.
+- `time -p` with backslash-newlines inside `time`, inside `-p` and before `((`, after a redirection, and inside zsh's `{...}`.
+- A `#` after an operator, after an escaped or quoted `;`, inside `${...}`, inside arithmetic, inside a backtick span within a span, inside an array, and in a heredoc body within a span.
+
+The rows whose verdict changed from `f1448b5` are all bypasses now blocked, or rows that neither shell runs, now allowed: the function and `case` bodies, and forms such as `function f { (a)#y }; git tag v1` that both shells reject. 83 everyday forms run through the gate at the fix and at `f1448b5` with the same verdicts. They include function and `case` bodies with comments after a subshell, `case $x in (a|b) ...`, `time -p make`, `> out.txt # write`, `diff <(sort a) <(sort b) # compare`, `x=( $(ls) ) # files` and `echo $( # comment` newline `echo a)`. The only blocks are the four already intended: a `case` in a substitution, an unclosed `"$(echo a;#b)"` and two quotes in arithmetic.
+
+**Live check.** In this session, with the plugin loaded from this working tree, in a scratch repo:
+
+- `echo $(:;;)#; git tag v1` was blocked by `deploy-gate`, naming release authorisation.
+- `echo $(echo a;#b); git tag v1`, and `x=(a <<E)`, `git tag v1`, `E` on lines of their own, were blocked by `red-guard` with the new reasons.
+- `f() { (echo a # c` newline `echo b) }` then `f`, and `case x in (x) (echo c # d` newline `echo e);; esac`, ran and printed `a`, `b`, `c`, `e`.
+- The scratch repo has no tags.
+
+**Timing.** These are gate (`readings`) and `is_git_commit` times at the fix, against `f1448b5`:
+
+- T16's nine rows are within 0.06 s of before in both hooks.
+- New rows take the same time as before, within 0.1 s: 20,000 `f() { (a) }` and `function f { (a) }` (both Unreadable, too many words), 20,000 `case` items `(a) (b) ;;`, 5,000 nested `case`, 100,000 `{` in a `case` body, 20,000 `$(:;;)`, 20,000 `$(a; #b` newline `)`, 20,000 `> (a)`, 20,000 `<<<(a)`, 20,000 `time -p((1))`, and 50,000 backslash-newlines before a `#` in a span (0.03 s).
+- `red-guard` takes up to 40 s on the largest rows, the same at `f1448b5`. That is the quadratic `find_commit` already in `docs/backlog.md`.
+- The T6, T7, T10, T11, T12 and T13 timing tests pass.
+
+**Docs.**
+
+- The `deploy_gate.py` docstring was checked against every ShellsDiffer raise site. It now names the `<<` inside an array, the `#` after an operator or a subshell's `)` in a span, and the redirection target as a glob group's opening.
+- `source_text`'s and `WordPosition`'s docstrings describe the new reading.
+- The five Nits are fixed: `CHANGELOG.md`'s two `case` lines and `COMMENT_IN_SUBSTITUTION` use the span wording, the red-guard bullet mentions `=git` bookkeeping, `README.md` describes `$[...]` ending at its own `]`, and `case_words` is saved and restored with every bracket.
+- The README and the CHANGELOG describe the new reading.
+- The backlog line on the untested `((` after a `)` is removed, since `for i (a)((x=1<<E))` and `foreach i (a)((x=1<<E));end` are now in the proving test.
+- `claude plugin validate .` passes, with warnings only.
+
+No existing assertion changed. New rows were added to `test_word_position_switches_only_where_the_shells_switch_it` and two to `RedGuardTests`. Beyond the `proves` sentence, the proving test also holds the found `)` family and the `time -p (a)#y` form.
+
+### Verifier 2026-11-02 20:44
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. Every row the `proves` sentence names is in `DeployGateTests.test_word_position_switches_only_where_the_shells_switch_it` (redirection rows via the `redirections` generator, the `;#b` and `|#b` span rows via the span/operator generator) and the two `RedGuardTests` rows are added. Run against the hooks at `ded855e` (test commit, code unchanged), 83 distinct rows fail: every deploy-gate exit-2 row except the `for`/`foreach` pair (kept from T16, as the ticket's scope says), the eight function and `case` body silent rows (exit 2 ShellsDiffer before), and both red-guard rows. Spot-checked with a stub `git` in `/bin/bash` and `/bin/zsh -f`: bash runs the tag on `echo $(:;;)#;`, `echo $(echo a;#b);`, `x=(a <<E)` and `time -p((x=1<<E))`; zsh runs it on `> (a|#b);`, `echo x <<<(a|#b);`, `<>(a|#b);` and `foreach i (a)((x=1<<E));end`; both shells run the five silent function, `case` and `$( ...; # note` forms named in `proves`.
+3. proving test run: 0, `Ran 2 tests in 6.922s OK` (the DeployGate and RedGuard tests targeted alone)
+4. feedback command: 0, `Ran 91 tests in 30.148s OK`
+5. acceptance: 11 of 11 checked, none failed. Proving test and full suite pass, test diff is additions only; the timing assertions (`assertLess(..., 5)` in the reader, gate and red-guard tests) pass in the suite; read `WordPosition` for the per-depth `cases` stack saved and restored on push/pop with `close_groups` gating case separators, `function_body` and `name` for `NAME()` and `function NAME`, the `pattern_ends` pop of a leading `(` on blank, newline or `;`, `HEREDOC_IN_ARRAY` and `HASH_AFTER_OPERATOR` raises, `argument()` honouring `redirect` and `process_open` set only on a `<(`/`>(` token, `TIME_OPTION` leaving argument position and feeding `glued`; the `for`/`foreach` rows are in the test and the backlog line is removed; the `deploy_gate.py` docstring names the array `<<`, the `#` after an operator or subshell `)` in a span and the redirection target; the Nits are in `CHANGELOG.md` (span wording twice, `=git` bookkeeping), `COMMENT_IN_SUBSTITUTION`, `README.md` (`$[...]` at its own `]`) and the saved `case_words`.
+6. scope: ok
+7. tests intact: ok

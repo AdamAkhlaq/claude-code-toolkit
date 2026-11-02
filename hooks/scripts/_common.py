@@ -562,7 +562,7 @@ def shell_source(command: str, bodies=None, spans=None) -> str:
 
 
 CONTINUATION = re.compile(r"\\(?:\n|.)", re.S)
-COMMENT_IN_SUBSTITUTION = "a `#` comment ending in a backslash inside a substitution, which bash and zsh end at different places"
+COMMENT_IN_SUBSTITUTION = "a `#` comment ending in a backslash inside a `$(...)`, `<(...)` or `>(...)` span, which bash and zsh end at different places"
 LITERAL_BODY_IN_SUBSTITUTION = "bash and zsh end a quoted heredoc body holding a backslash-newline inside a substitution at different places: bash joins its lines, zsh keeps them"
 
 
@@ -611,19 +611,28 @@ ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=")
 CASE_SEPARATORS = (";;", ";&", ";;&", ";|")
 
 
+TIME_OPTION = re.compile(r"-(?:\\\n)*p(?:\\\n)*(?=[ \t\n;&|()<>]|\Z)")
+
+
 class WordPosition:
     """Where the next word of a call sits, as bash and zsh read it, so a `(` that starts a word is read as a subshell or a grouping only where the shells read one.
 
     The next word names a command at the start, after a control operator or
-    the `)` that ends a `case` pattern, and after a reserved word that a
-    command follows, such as `then` or `!`, a run of zsh's `{` or an
-    assignment. Any other word moves it to argument position, where zsh reads
-    a `(` that starts a word as a glob group, as it does in a `case` pattern,
-    from the `in` or `;;` before it to its own `)`, and after a `[[ ]]`
-    operator such as `==`. A grouping `(` in `[[ ]]` comes after `[[`, `!`,
-    `&&`, `||` or another `(`. A redirection's target leaves the position as
-    it was. Every bracket the reader opens saves the position, and its close
-    restores it, a subshell's `)` leaving argument position after it.
+    the `)` that ends a `case` pattern, after a reserved word that a command
+    follows, such as `then` or `!`, a run of zsh's `{` or an assignment, after
+    the name that follows `function`, and after the `()` of a function
+    definition. Any other word moves it to argument position, where zsh reads
+    a `(` that starts a word as a glob group. So does a redirection's target,
+    the `-p` of `time`, which zsh runs as a command, a `case` pattern, from
+    the `in` or `;;` before it to its own `)`, and a `[[ ]]` operand after an
+    operator such as `==`. A case separator starts a pattern only while a
+    `case` opened at that depth is open, until its `esac` or zsh's `}`, so
+    `$(:;;)` holds none. A pattern's leading `(`, as in `case x in (x) cmd`,
+    ends the pattern at its `)` when a blank, a newline or `;` follows, where
+    both shells end it. A grouping `(` in `[[ ]]` comes after `[[`, `!`, `&&`,
+    `||` or another `(`. Every bracket the reader opens saves the position and
+    the `case`s open, and its close restores them, a subshell's `)` leaving
+    argument position after it.
     """
 
     def __init__(self):
@@ -631,68 +640,137 @@ class WordPosition:
         self.redirect = False
         self.case_words = 0
         self.pattern_depth = 0
+        self.pattern_start = False
+        # What closes each `case` open at this depth, `esac` or zsh's `}`, and a `}` for each brace group opened inside one.
+        self.cases = []
+        self.name = self.timed = False
+        self.time_option = -1
+        self.leading = 0
         self.saved = []
 
     def argument(self) -> bool:
-        return self.pattern or (not self.group if self.cond else not self.command)
+        return self.redirect or self.pattern or (not self.group if self.cond else not self.command)
 
     def operator(self, token: str, depth: int) -> None:
         if self.pattern:
             return
+        self.name = self.timed = False
         if token[0] in "<>" or token in ("&>", "&>>"):
             self.redirect = not self.cond
-        elif token in CASE_SEPARATORS:
-            self.pattern, self.pattern_depth = True, depth
+        elif token in CASE_SEPARATORS and self.close_groups():
+            self.enter_pattern(depth)
         elif self.cond and token in ("&&", "||"):
             self.group = True
         else:
             self.command, self.redirect = True, False
 
     def word(self, command: str, index: int, depth: int) -> None:
+        name, timed = self.name, self.timed
+        self.name = self.timed = False
         if self.redirect:
             self.redirect = False
         elif self.pattern:
+            self.pattern_start = False
             if word_at(command, index, "esac") or word_at(command, index, "}"):
                 self.pattern = self.command = False
+                self.close_case(command[index])
         elif self.case_words:
             self.case_words -= 1
             if not self.case_words and (word_at(command, index, "in") or word_at(command, index, "{")):
-                self.pattern, self.pattern_depth = True, depth
+                self.cases.append("esac" if command[index] == "i" else "}")
+                self.enter_pattern(depth)
         elif self.cond:
             if word_at(command, index, "]]"):
                 self.cond = self.command = False
             self.group = word_at(command, index, "!")
         elif self.command:
+            if name:
+                return
+            if timed and TIME_OPTION.match(command, index):
+                self.time_option, self.command = index, False
+                return
             run = index
             while command.startswith("{", run):
                 run += 1
+            if self.cases:
+                self.cases.extend("{" * (run - index))
             if word_at(command, run, "[["):
                 self.cond, self.group, self.command = True, True, False
             elif word_at(command, run, "case"):
                 self.case_words, self.command = 2, False
+            elif word_at(command, run, "function"):
+                self.name = True
+            elif self.cases and (word_at(command, run, "esac") or word_at(command, run, "}")):
+                self.command = False
+                self.close_case(command[run])
             elif not (run > index and command[run : run + 1] in METACHARACTERS) and not any(word_at(command, run, word) for word in RESERVED_BEFORE_COMMAND) and not ASSIGNMENT.match(command, run):
                 self.command = False
+            self.timed = word_at(command, run, "time")
+
+    def close_groups(self) -> bool:
+        """Drop the brace groups opened inside the innermost open `case`, which a case separator or its `esac` must follow, and say whether a `case` is open."""
+        while self.cases and self.cases[-1] == "{":
+            self.cases.pop()
+        return bool(self.cases)
+
+    def close_case(self, closer: str) -> None:
+        if closer == "}" and self.cases and self.cases[-1] == "{":
+            self.cases.pop()
+        elif self.close_groups() and self.cases[-1] == ("esac" if closer == "e" else "}"):
+            self.cases.pop()
+
+    def enter_pattern(self, depth: int) -> None:
+        self.pattern, self.pattern_depth, self.pattern_start = True, depth, True
 
     def closes_pattern(self, depth: int) -> bool:
         return self.pattern and depth == self.pattern_depth
 
     def end_pattern(self) -> None:
-        self.pattern, self.command = False, True
+        self.pattern, self.pattern_start, self.command = False, False, True
 
-    def push(self, kind: str) -> None:
-        self.saved.append((self.command, self.cond, self.group, self.pattern))
-        self.pattern = False
+    def function_body(self) -> None:
+        """After the `()` of a function definition, which both shells follow with its body in command position."""
+        if not (self.pattern or self.cond):
+            self.command, self.redirect, self.name, self.timed = True, False, False, False
+
+    def push(self, kind: str, leading: bool = False) -> None:
+        self.pattern_start = False
+        self.saved.append((self.command, self.cond, self.group, self.pattern, self.pattern_depth, self.case_words, self.cases, self.name, self.timed))
+        self.pattern, self.redirect, self.cases, self.name, self.timed = False, False, [], False, False
+        if leading:
+            self.leading = len(self.saved)
         if kind == WORD:
-            self.command, self.cond, self.redirect, self.case_words = True, False, False, 0
+            self.command, self.cond, self.case_words = True, False, 0
         elif kind == "":
             self.command, self.group = True, self.cond
         elif kind == ARRAY:
             self.command = False
 
-    def pop(self, kind: str) -> None:
-        self.command, self.cond, self.group, self.pattern = self.saved.pop()
+    def pop(self, kind: str, pattern_ends: bool = False) -> None:
+        leading = self.leading == len(self.saved)
+        self.command, self.cond, self.group, self.pattern, self.pattern_depth, self.case_words, self.cases, self.name, self.timed = self.saved.pop()
         if kind == "":
             self.command = self.group = False
+        if leading:
+            self.leading = 0
+            if pattern_ends:
+                self.end_pattern()
+
+
+HEREDOC_IN_ARRAY = "bash and zsh read a `<<` inside an array's `(...)` differently: bash rejects that line and runs the lines after it, zsh rejects the whole call"
+HASH_AFTER_OPERATOR = "bash and zsh read a `#` straight after `;`, `|`, `&`, `<`, `>` or a subshell's `)` inside a `$(...)`, `<(...)` or `>(...)` span differently: bash as part of a word, ending the span at the next `)`, zsh as a comment"
+
+
+def last_before(command: str, index: int) -> int:
+    """The index of the last character before `index` that is not part of a backslash-newline, which the shells delete before reading it."""
+    while index >= 2 and command.startswith("\\\n", index - 2):
+        run = index - 2
+        while run > 0 and command[run - 1] == "\\":
+            run -= 1
+        if (index - 1 - run) % 2 == 0:
+            break
+        index -= 2
+    return index - 1
 
 
 HASH_AFTER_ARRAY = "bash and zsh read a `#` straight after an array's `)` differently: bash as part of the word, zsh as a comment"
@@ -710,18 +788,26 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
     does one inside or straight after a glob group, which zsh opens at a `(`
     in the middle of a word and at one that starts a word `WordPosition`
     places outside command position, as in `echo (a)#y`, a `case` pattern or
-    `[[ a == (a)#y ]]`, and bash reads as a syntax error or text. A `((` that
-    starts a word, or follows a reserved word such as `if` or `!`, a run of
-    zsh's `{` or a `)` with no space between, is arithmetic where
-    `arithmetic_end` reads it so, its `))` closing a glob group outside
-    command position. A quote inside it or `$[...]` raises ShellsDiffer, a
-    `<<` there is a shift, not a heredoc, and `$[...]` ends only at the `]`
-    `arithmetic_end` finds for it, so a `]` nested in a span inside it does
-    not end it. Since a `case`
-    pattern's `)` would close a parenthesis it does not open, a `case` inside
-    a `$(...)`, `<(...)` or `>(...)` span raises Unmodelled. A heredoc whose closing
-    line never comes keeps its body, so a missing delimiter cannot hide the
-    lines after it. When `bodies` is a list, the body of each heredoc whose
+    `[[ a == (a)#y ]]`, and bash reads as a syntax error or text. Inside a
+    `$(...)`, `<(...)` or `>(...)` span, a `#` straight after `;`, `|`, `&`,
+    `<`, `>` or a subshell's `)` raises ShellsDiffer: bash 3.2 reads it as
+    part of a word and ends the span at the next `)`, zsh as a comment. A
+    `(` straight after `<` or `>` opens a process substitution only where
+    that `<` or `>` starts its own `<(` or `>(` token, so the `(` of
+    `<<<(a)` or `<>(a)` is a redirection's target, and an empty `()` is a
+    function definition's, after which `WordPosition` expects the body. A
+    `((` that starts a word, or follows a reserved word such as `if` or
+    `!`, a run of zsh's `{`, a `)` or the `-p` of `time` with no space
+    between, is arithmetic where `arithmetic_end` reads it so, its `))`
+    closing a glob group outside command position. A quote inside it or
+    `$[...]` raises ShellsDiffer, a `<<` there is a shift, not a heredoc,
+    and `$[...]` ends only at the `]` `arithmetic_end` finds for it, so a
+    `]` nested in a span inside it does not end it. A `<<` inside an array,
+    which bash rejects on that line alone and zsh in the whole call, raises
+    ShellsDiffer. Since a `case` pattern's `)` would close a parenthesis it
+    does not open, a `case` inside a `$(...)`, `<(...)` or `>(...)` span
+    raises Unmodelled. A heredoc whose closing line never comes keeps its
+    body, so a missing delimiter cannot hide the lines after it. When `bodies` is a list, the body of each heredoc whose
     delimiter is unquoted is appended to it: the shell still runs `$(...)` and
     backticks there. Each `$'...'` span is written as the plain single-quoted
     text it decodes to. Double-quoted text is read by `double_quoted`, so a
@@ -753,18 +839,23 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
     at_word_start = True
     word_start = brace_end = 0
     operator_end = 0
+    process_open = -1
     index = 0
     while index < len(command):
         char = command[index]
         starts_word = at_word_start
         at_word_start = False
         arithmetic = bool(parens) and parens[-1] in (ARITHMETIC, BRACKET)
-        if not quote and not braces and not arithmetic and not (parens and parens[-1] in (GLOB, ARRAY)) and index >= operator_end and not command.startswith("\\\n", index):
+        if not quote and not braces and not arithmetic and index >= operator_end and not command.startswith("\\\n", index):
             token = ";|" if command.startswith(";|", index) else OPERATOR.match(command, index).group() if char in ";&|\n<>" else ""
+            tracked = not (parens and parens[-1] in (GLOB, ARRAY))
+            if token in ("<(", ">("):
+                process_open = index + 1
             if token and token not in ("<(", ">("):
                 operator_end = index + len(token)
-                position.operator(token, len(parens))
-            elif starts_word and (char not in METACHARACTERS + "#" or token):
+                if tracked:
+                    position.operator(token, len(parens))
+            elif tracked and starts_word and (char not in METACHARACTERS + "#" or token):
                 word_start = brace_end = index
                 while command.startswith("{", brace_end):
                     brace_end += 1
@@ -776,7 +867,7 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
                 at_word_start = starts_word
             index += 2
             continue
-        if not quote and command.startswith(("$(", "<(", ">("), index):
+        if not quote and command.startswith(("$(", "<(", ">("), index) and (char == "$" or index >= operator_end):
             opens.append(index + 1)
         if quote:
             if char == quote:
@@ -807,6 +898,8 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
         elif char == "#" and starts_word and not braces and parens and parens[-1] == GLOB:
             raise ShellsDiffer(HASH_IN_GLOB)
         elif char == "#" and starts_word and not braces and not arithmetic:
+            if (before := last_before(command, index)) >= 0 and command[before] in ";|&<>)" and (words or substitution_holds(command, opens, settled, index)):
+                raise ShellsDiffer(HASH_AFTER_OPERATOR)
             end = command.find("\n", index)
             if end != -1 and comment_continues(command, index, end):
                 if substitution_holds(command, opens, settled, index):
@@ -826,7 +919,13 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             before = command[index - 1 : index]
             in_glob = bool(parens) and parens[-1] == GLOB
             argument = in_glob or position.argument()
-            glued = not starts_word and (index == brace_end > word_start or index - word_start <= GLUED_SPAN and RESERVED_GLUED.fullmatch(joined(command[word_start:index])))
+            glued = not starts_word and (index == brace_end > word_start or index - word_start <= GLUED_SPAN and (RESERVED_GLUED.fullmatch(text := joined(command[word_start:index])) or position.time_option == word_start and text == "-p"))
+            if command.startswith("()", index) and not (in_glob or arithmetic or before in ("$", "=") or index == process_open):
+                position.function_body()
+                kept.append("()")
+                index += 2
+                at_word_start = True
+                continue
             if command.startswith("((", index) and (before == "$" or (starts_word or glued or before == ")") and not arithmetic) and arithmetic_end(command, index + 1, matches=matches) is not None:
                 outer = WORD if before == "$" else GLOB if argument or not (starts_word or glued) else ""
                 position.push(outer)
@@ -837,7 +936,7 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
                 index += 2
                 at_word_start = True
                 continue
-            if before == "$" or before in ("<", ">") and not arithmetic:
+            if before == "$" or index == process_open:
                 kind = WORD
             elif arithmetic:
                 kind = ARITHMETIC
@@ -845,14 +944,14 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
                 kind = GLOB
             else:
                 kind = ARRAY if before == "=" else ""
-            position.push(kind)
+            position.push(kind, kind == GLOB and position.pattern and position.pattern_start)
             parens.append(kind)
             words += kind == WORD
         elif char == ")" and not braces and (not parens or position.closes_pattern(len(parens))):
             position.end_pattern()
         elif char == ")" and parens and not braces:
             kind = parens.pop()
-            position.pop(kind)
+            position.pop(kind, command[index + 1 : index + 2] in ("", " ", "\t", "\n", ";"))
             words -= kind == WORD
             if kind in (ARRAY, GLOB) and command.startswith("#", index + 1):
                 raise ShellsDiffer(HASH_AFTER_ARRAY if kind == ARRAY else HASH_IN_GLOB)
@@ -889,6 +988,8 @@ def source_text(command: str, bodies=None, spans=None, literal=None) -> str:
             index += 3
             continue
         elif char == "<" and not arithmetic and (heredoc := heredoc_at(command, index)):
+            if parens and parens[-1] == ARRAY:
+                raise ShellsDiffer(HEREDOC_IN_ARRAY)
             end, strip_tabs, delimiter, expands = heredoc
             pending.append((strip_tabs, delimiter, expands))
             position.redirect = False

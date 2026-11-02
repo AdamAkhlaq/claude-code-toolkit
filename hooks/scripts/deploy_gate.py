@@ -13,12 +13,15 @@ delimiter starting with `$"` or `$$'`, a `'...'` span inside a double-quoted
 bracket after `$$` inside double quotes, a `${...}` with an unbalanced
 parenthesis inside a substitution, a quoted heredoc body holding a
 backslash-newline inside a substitution, a quote inside arithmetic or a
-`${...}` that makes the shells end arithmetic apart, and a `#` straight
-after an array's `)` or inside or straight after a zsh glob group: a `(`
-in the middle of a word, such as `x(N)`, or at the start of an argument
-word, a `case` pattern or a `[[ ]]` pattern, such as `echo (a)`. So is one
-that never closes: a double-quoted substitution or `${...}`, or a backtick
-span whose script leaves a quote open. So is one the reader does not model:
+`${...}` that makes the shells end arithmetic apart, a `<<` inside an
+array, a `#` straight after `;`, `|`, `&`, `<`, `>` or a subshell's `)`
+inside a `$(...)`, `<(...)` or `>(...)` span, and a `#` straight after an
+array's `)` or inside or straight after a zsh glob group: a `(` in the
+middle of a word, such as `x(N)`, or at the start of an argument word, a
+redirection's target, a `case` pattern or a `[[ ]]` pattern, such as
+`echo (a)` or `> (a)`. So is one that never closes: a double-quoted
+substitution or `${...}`, or a backtick span whose script leaves a quote
+open. So is one the reader does not model:
 a `case`, or a `#` comment ending in a backslash, inside a `$(...)`,
 `<(...)` or `>(...)` span, and a backslash-newline that would change where a
 quote, substitution, heredoc or comment ends.

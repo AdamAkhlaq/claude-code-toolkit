@@ -12,7 +12,7 @@ files:
     docs/backlog.md,
   ]
 proves: 'in tests/test_hooks.py, DeployGateTests.test_word_position_switches_only_where_the_shells_switch_it: with gatedCommands ["^git tag "], deploy_gate.py exits 2 naming release authorisation on `echo $(:;;)#; git tag v1`, its `;&`, `;|` and `;;&` forms and `cat <(:;;)#; git tag v1`, and on `time -p((x=1<<E))`, `for i (a)((x=1<<E))` and `foreach i (a)((x=1<<E));end`, each followed by `git tag v1` and `E` on lines of their own; exits 2 naming bash and zsh on `x=(a <<E)` followed by `git tag v1` and `E` on lines of their own, `> (a|#b); git tag v1`, `! < (N)#y; git tag v1`, `>|(a)#y; git tag v1`, `>&(a|#b); git tag v1`, `echo x <<<(a|#b); git tag v1`, `<>(a|#b); git tag v1`, `echo $(echo a;#b); git tag v1`, `echo $(echo a|#b); git tag v1` and `cat <(echo a|#b); git tag v1`; and exits 0 silently on `f() { (echo a # c` newline `echo b) }`, `function f { (echo a # c` newline `echo b) }`, `case x in (x) (echo a # c` newline `echo b);; esac`, `case x in (x) echo a | (cat # c` newline `);; esac` and `x=$(echo a; # note` newline `)`; and in RedGuardTests.test_reworded_commits_are_recognised, red_guard.py exits 2 on `echo $(:;;)#; git commit -am x` and `> (a|#b); git commit -am x`'
-status: in-progress
+status: done
 executed_by: single
 branch: ticket/0003-T17
 ---
@@ -150,3 +150,16 @@ The rows whose verdict changed from `f1448b5` are all bypasses now blocked, or r
 - `claude plugin validate .` passes, with warnings only.
 
 No existing assertion changed. New rows were added to `test_word_position_switches_only_where_the_shells_switch_it` and two to `RedGuardTests`. Beyond the `proves` sentence, the proving test also holds the found `)` family and the `time -p (a)#y` form.
+
+### Verifier 2026-11-02 20:44
+
+Verdict: pass
+Checks:
+
+1. ticket integrity: ok
+2. proving test present and meaningful: ok. Every row the `proves` sentence names is in `DeployGateTests.test_word_position_switches_only_where_the_shells_switch_it` (redirection rows via the `redirections` generator, the `;#b` and `|#b` span rows via the span/operator generator) and the two `RedGuardTests` rows are added. Run against the hooks at `ded855e` (test commit, code unchanged), 83 distinct rows fail: every deploy-gate exit-2 row except the `for`/`foreach` pair (kept from T16, as the ticket's scope says), the eight function and `case` body silent rows (exit 2 ShellsDiffer before), and both red-guard rows. Spot-checked with a stub `git` in `/bin/bash` and `/bin/zsh -f`: bash runs the tag on `echo $(:;;)#;`, `echo $(echo a;#b);`, `x=(a <<E)` and `time -p((x=1<<E))`; zsh runs it on `> (a|#b);`, `echo x <<<(a|#b);`, `<>(a|#b);` and `foreach i (a)((x=1<<E));end`; both shells run the five silent function, `case` and `$( ...; # note` forms named in `proves`.
+3. proving test run: 0, `Ran 2 tests in 6.922s OK` (the DeployGate and RedGuard tests targeted alone)
+4. feedback command: 0, `Ran 91 tests in 30.148s OK`
+5. acceptance: 11 of 11 checked, none failed. Proving test and full suite pass, test diff is additions only; the timing assertions (`assertLess(..., 5)` in the reader, gate and red-guard tests) pass in the suite; read `WordPosition` for the per-depth `cases` stack saved and restored on push/pop with `close_groups` gating case separators, `function_body` and `name` for `NAME()` and `function NAME`, the `pattern_ends` pop of a leading `(` on blank, newline or `;`, `HEREDOC_IN_ARRAY` and `HASH_AFTER_OPERATOR` raises, `argument()` honouring `redirect` and `process_open` set only on a `<(`/`>(` token, `TIME_OPTION` leaving argument position and feeding `glued`; the `for`/`foreach` rows are in the test and the backlog line is removed; the `deploy_gate.py` docstring names the array `<<`, the `#` after an operator or subshell `)` in a span and the redirection target; the Nits are in `CHANGELOG.md` (span wording twice, `=git` bookkeeping), `COMMENT_IN_SUBSTITUTION`, `README.md` (`$[...]` at its own `]`) and the saved `case_words`.
+6. scope: ok
+7. tests intact: ok
